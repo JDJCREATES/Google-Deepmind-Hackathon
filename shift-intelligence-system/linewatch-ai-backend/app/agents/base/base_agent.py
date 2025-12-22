@@ -117,6 +117,21 @@ class BaseAgent(ABC):
         
         self.logger.info(f"✅ {agent_name} initialized with Gemini 3 ({model_name})")
     
+    async def _broadcast_thought(self, message: str, message_type: str = "agent_thought"):
+        """Broadcast a thought to the frontend via WebSocket."""
+        try:
+            from app.services.websocket import manager
+            await manager.broadcast({
+                "type": message_type,
+                "data": {
+                    "source": self.agent_name,
+                    "description": message,
+                    "timestamp": datetime.now().isoformat()
+                }
+            })
+        except Exception:
+            pass  # Don't fail if websocket is down
+
     # ========== REASONING PHASE ==========
     
     async def reason(self, context: Dict[str, Any]) -> ReasoningResult:
@@ -136,6 +151,7 @@ class BaseAgent(ABC):
             ReasoningResult with thought process and proposed actions
         """
         self.logger.info(f"🧠 [{self.agent_name}] Starting reasoning phase...")
+        await self._broadcast_thought(f"Starting reasoning on context: {list(context.keys())}")
         
         # Build reasoning prompt
         reasoning_prompt = self._build_reasoning_prompt(context)
@@ -156,11 +172,15 @@ class BaseAgent(ABC):
         proposed_actions = self._extract_proposed_actions(result)
         confidence = self._calculate_confidence(result)
         
+        await self._broadcast_thought(f"Reasoning complete. Confidence: {confidence:.2f}")
+        await self._broadcast_thought(f"Thoughts: {thoughts[:100]}...")
+
         # Determine if escalation needed
         should_escalate = confidence < 0.7 or self._detect_critical_situation(context)
         escalation_reason = None
         if should_escalate:
             escalation_reason = self._build_escalation_reason(context, thoughts)
+            await self._broadcast_thought(f"Escalating: {escalation_reason}", "system_alert")
         
         # Determine if verification needed
         requires_verification = self._needs_verification(proposed_actions)

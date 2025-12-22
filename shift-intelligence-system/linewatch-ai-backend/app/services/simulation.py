@@ -106,9 +106,49 @@ class SimulationService:
         if random.random() < settings.event_probability_bottleneck:
             events.append(self._generate_bottleneck())
 
-        # 3. Broadcast All Events
+        # 3. Broadcast All Events and Check for Critical Incidents
         for event in events:
+            # Broadcast the event to frontend
             await manager.broadcast(event)
+            
+            # AUTO-TRIGGER INVESTIGATION
+            # If critical, start the hypothesis market
+            event_data = event.get("data", {})
+            severity = event_data.get("severity", "LOW")
+            
+            if severity in ["HIGH", "CRITICAL"]:
+                logger.info(f"🚨 Critical Event Detected: {event_data.get('description')} - Triggering Investigation")
+                
+                # Run in background to not block simulation loop
+                asyncio.create_task(self._trigger_investigation(event_data))
+
+    async def _trigger_investigation(self, event_data: dict):
+        """Run hypothesis market for a critical event."""
+        try:
+            from app.graphs.hypothesis_market import run_hypothesis_market
+            
+            # Broadcast start of investigation
+            await manager.broadcast({
+                "type": "agent_thought",
+                "data": {
+                    "source": "ORCHESTRATOR",
+                    "description": f"Initiating investigation for {event_data.get('description')}",
+                    "timestamp": datetime.now().isoformat()
+                }
+            })
+            
+            await run_hypothesis_market(
+                signal_id=f"sim-{int(datetime.now().timestamp())}",
+                signal_type=event_data.get("type", "UNKNOWN"),
+                signal_description=event_data.get("description", "Simulation Event"),
+                signal_data=event_data
+            )
+        except Exception as e:
+            logger.error(f"Failed to trigger investigation: {e}")
+            await manager.broadcast({
+                "type": "error",
+                "data": {"message": f"Investigation failed: {str(e)}"}
+            })
             
     def _generate_breakdown(self) -> Dict[str, Any]:
         """Generate a random equipment breakdown."""

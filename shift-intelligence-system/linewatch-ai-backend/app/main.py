@@ -9,6 +9,7 @@ from app.utils.logging import setup_logging, get_agent_logger
 setup_logging()
 logger = get_agent_logger("SYSTEM")
 
+from app.services.simulation import simulation
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
