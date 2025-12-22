@@ -50,11 +50,14 @@ class PolicyEvolver:
         self.evolution_threshold = evolution_threshold
         self.min_accuracy_delta = min_accuracy_delta
         
-        self.llm = ChatGoogleGenerativeAI(
-            model=settings.gemini_model,
-            google_api_key=settings.google_api_key,
-            temperature=0.4,
-        )
+        if settings.google_api_key:
+            self.llm = ChatGoogleGenerativeAI(
+                model=settings.gemini_model,
+                google_api_key=settings.google_api_key,
+                temperature=0.4,
+            )
+        else:
+            self.llm = None
     
     async def should_evolve(
         self,

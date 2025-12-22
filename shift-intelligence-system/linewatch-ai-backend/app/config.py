@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     )
     
     # Gemini 3 API Configuration
-    google_api_key: str
+    google_api_key: str | None = None
     gemini_model: str = "gemini-3.0-flash-exp"  # Gemini 3.0 Flash (experimental)
     
     # FastAPI Configuration

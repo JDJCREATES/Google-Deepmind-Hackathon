@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "linewatch-ai-backend"
 version = "0.1.0"
 description = "Production-grade shift intelligence multi-agent system powered by Gemini 3"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.109.0",
     "uvicorn[standard]>=0.27.0",
