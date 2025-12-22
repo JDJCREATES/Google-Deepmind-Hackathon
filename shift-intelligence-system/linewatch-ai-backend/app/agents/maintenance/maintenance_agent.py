@@ -44,6 +44,36 @@ class MaintenanceAgent(BaseAgent):
         
         logger.info("✅ Maintenance Agent initialized")
     
+    # ========== HYPOTHESIS GENERATION ==========
+    
+    async def generate_hypotheses(self, signal: Dict[str, Any]) -> List[Any]:
+        """
+        Generate FMEA and RCA hypotheses for equipment issues.
+        """
+        from app.hypothesis import create_hypothesis, HypothesisFramework
+        from uuid import uuid4
+        
+        self.logger.info("💡 Generating Maintenance hypotheses (FMEA/RCA)")
+        
+        hypotheses = []
+        signal_desc = signal.get('description', '')
+        
+        # FMEA: Predictive failure
+        if 'vibration' in signal_desc.lower() or 'noise' in signal_desc:
+            hypotheses.append(create_hypothesis(
+                framework=HypothesisFramework.FMEA,
+                hypothesis_id=f"H-MAINT-{uuid4().hex[:6]}",
+                description="Bearing wear leading to potential seizure",
+                initial_confidence=0.75,
+                impact=6.0,
+                urgency=5.0,
+                proposed_by=self.agent_name,
+                recommended_action="Schedule maintenance in next window",
+                target_agent="MaintenanceAgent"
+            ))
+            
+        return hypotheses
+    
     async def _execute_action(self, action: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """Execute maintenance actions."""
         action_lower = action.lower()

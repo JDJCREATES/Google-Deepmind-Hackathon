@@ -5,6 +5,7 @@ This agent uses Gemini 3's deepest reasoning (Level 3) to make complex decisions
 resolve conflicts between agents, and escalate to humans when needed.
 """
 from typing import Dict, Any
+from datetime import datetime
 
 from app.agents.base import BaseAgent
 from app.prompts.orchestrator.system import ORCHESTRATOR_SYSTEM_PROMPT
@@ -51,11 +52,72 @@ class MasterOrchestrator(BaseAgent):
         
         logger.info("✅ Master Orchestrator initialized (Gemini 3 Pro)")
     
+    async def run_investigation(self, signal_desc: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Run a full hypothesis-driven investigation for a complex signal.
+        """
+        from app.graphs.hypothesis_market import create_hypothesis_market_graph
+        
+        self.logger.info(f"🕵️‍♂️ Starting investigation: {signal_desc}")
+        
+        graph = create_hypothesis_market_graph()
+        
+        # Initialize state
+        initial_state = {
+            "signal_id": f"SIG-{datetime.now().timestamp()}",
+            "signal_type": "PRODUCTION_ALERT",
+            "signal_description": signal_desc,
+            "signal_data": context,
+            "hypotheses": [],
+            "evidence": [],
+            "iteration": 0,
+            "max_iterations": 3,
+        }
+        
+        # Run graph
+        final_state = await graph.ainvoke(initial_state)
+        
+        return {
+            "status": "COMPLETED",
+            "action": final_state.get("selected_action"),
+            "belief_state": final_state.get("belief_state"),
+        }
+
+    # ========== HYPOTHESIS GENERATION ==========
+    
+    async def generate_hypotheses(self, signal: Dict[str, Any]) -> List[Any]:
+        """
+        Generate Counterfactual hypotheses for strategic analysis.
+        """
+        from app.hypothesis import create_hypothesis, HypothesisFramework
+        from uuid import uuid4
+        
+        hypotheses = []
+        signal_desc = signal.get('description', '')
+        
+        # Counterfactual: Strategy shift
+        hypotheses.append(create_hypothesis(
+            framework=HypothesisFramework.COUNTERFACTUAL,
+            hypothesis_id=f"H-STRAT-{uuid4().hex[:6]}",
+            description="What if we prioritized quality over throughput?",
+            initial_confidence=0.4, # Speculative
+            impact=9.0,
+            urgency=3.0,
+            proposed_by=self.agent_name,
+            recommended_action="Initiate Quality-First Protocol",
+            target_agent="MasterOrchestrator"
+        ))
+            
+        return hypotheses
+
     async def _execute_action(self, action: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """Execute orchestrator actions."""
         action_lower = action.lower()
         
-        if "escalate" in action_lower:
+        if "investigate" in action_lower:
+            return await self.run_investigation(action, context)
+        
+        elif "escalate" in action_lower:
             result = await escalate_to_human(
                 alert_title=context.get("issue", "Complex situation detected"),
                 description=action,

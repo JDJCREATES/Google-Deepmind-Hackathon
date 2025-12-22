@@ -58,6 +58,50 @@ class ComplianceAgent(BaseAgent):
         
         logger.info("✅ Compliance Agent initialized")
     
+    # ========== HYPOTHESIS GENERATION ==========
+    
+    async def generate_hypotheses(self, signal: Dict[str, Any]) -> List[Any]:
+        """
+        Generate HACCP and FMEA hypotheses for compliance issues.
+        """
+        from app.hypothesis import create_hypothesis, HypothesisFramework
+        from uuid import uuid4
+        
+        self.logger.info("💡 Generating Compliance hypotheses (HACCP/FMEA)")
+        
+        hypotheses = []
+        signal_desc = signal.get('description', '')
+        
+        # HACCP Hypothesis: CCP Violation
+        if 'temperature' in signal_desc.lower() or 'contamination' in signal_desc:
+            hypotheses.append(create_hypothesis(
+                framework=HypothesisFramework.HACCP,
+                hypothesis_id=f"H-CCP-{uuid4().hex[:6]}",
+                description="Critical Control Point limit deviation detected",
+                initial_confidence=0.8,
+                impact=10.0,
+                urgency=10.0,
+                proposed_by=self.agent_name,
+                recommended_action="Quarantine affected product batch",
+                target_agent="ComplianceAgent"
+            ))
+            
+        # FMEA Hypothesis: Safety Risk
+        if 'guard' in signal_desc.lower() or 'ppe' in signal_desc or 'safety' in signal_desc:
+            hypotheses.append(create_hypothesis(
+                framework=HypothesisFramework.FMEA,
+                hypothesis_id=f"H-FMEA-{uuid4().hex[:6]}",
+                description="High severity failure mode activated (Safety)",
+                initial_confidence=0.7,
+                impact=9.0,
+                urgency=8.0,
+                proposed_by=self.agent_name,
+                recommended_action="Suspend line operation immediately",
+                target_agent="ProductionAgent"
+            ))
+            
+        return hypotheses
+    
     #========== ACTION EXECUTION ==========
     
     async def _execute_action(

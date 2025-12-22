@@ -7,6 +7,7 @@ This module provides the foundation for all specialized agents with:
 - Nested subagent spawning
 - Self-verification loops
 - Escalation mechanisms
+- Hypothesis generation for epistemic framework
 """
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional, Callable
@@ -382,6 +383,29 @@ class BaseAgent(ABC):
     async def _create_subagent(self, subagent_type: str) -> 'BaseAgent':
         """Create specialized subagent (override in subclass)."""
         pass
+
+    async def generate_hypotheses(self, signal: Dict[str, Any]) -> List[Any]:
+        """
+        Generate domain-specific hypotheses for a given signal.
+        
+        Default implementation using Gemini to generate hypotheses
+        based on agent's system prompt and expertise.
+        """
+        from app.hypothesis import create_hypothesis, Hypothesis
+        
+        prompt = f"""
+        As the {self.agent_name}, generate hypotheses for this signal:
+        Signal: {signal.get('description')}
+        Data: {signal.get('data')}
+        
+        Generate 1-2 hypotheses specific to your domain expertise.
+        """
+        
+        # This is a basic implementation - subclasses should override or
+        # we can implement a generic one here using self.llm
+        # For the hackathon, we'll keep it simple in the base and override in subclasses
+        # where we want specific framework logic.
+        return []
     
     # ========== HELPER METHODS ==========
     

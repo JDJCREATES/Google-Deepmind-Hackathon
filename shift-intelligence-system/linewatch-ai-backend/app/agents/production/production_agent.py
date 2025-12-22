@@ -58,8 +58,53 @@ class ProductionAgent(BaseAgent):
             thinking_level=1,  # Quick decisions for monitoring
         )
         
+
         logger.info("✅ Production Agent initialized")
     
+    # ========== HYPOTHESIS GENERATION ==========
+    
+    async def generate_hypotheses(self, signal: Dict[str, Any]) -> List[Any]:
+        """
+        Generate RCA and TOC hypotheses for production issues.
+        """
+        from app.hypothesis import create_hypothesis, HypothesisFramework
+        from uuid import uuid4
+        
+        self.logger.info("💡 Generating Production hypotheses (RCA/TOC)")
+        
+        hypotheses = []
+        signal_desc = signal.get('description', '')
+        
+        # RCA Hypothesis: Equipment failure
+        if 'throughput' in signal_desc.lower() or 'stopped' in signal_desc:
+            hypotheses.append(create_hypothesis(
+                framework=HypothesisFramework.RCA,
+                hypothesis_id=f"H-PROD-{uuid4().hex[:6]}",
+                description=f"Equipment failure on line causing {signal_desc}",
+                initial_confidence=0.6,
+                impact=8.0,
+                urgency=9.0,
+                proposed_by=self.agent_name,
+                recommended_action="Run diagnostic subagent",
+                target_agent="ProductionAgent"
+            ))
+            
+        # TOC Hypothesis: Upstream bottleneck
+        if 'slow' in signal_desc.lower() or 'waiting' in signal_desc:
+            hypotheses.append(create_hypothesis(
+                framework=HypothesisFramework.TOC,
+                hypothesis_id=f"H-TOC-{uuid4().hex[:6]}",
+                description="Upstream bottleneck constraining throughput",
+                initial_confidence=0.5,
+                impact=7.0,
+                urgency=7.0,
+                proposed_by=self.agent_name,
+                recommended_action="Analyze bottleneck root cause",
+                target_agent="ProductionAgent"
+            ))
+            
+        return hypotheses
+
     # ========== SPECIALIZED ACTION EXECUTION ==========
     
     async def _execute_action(
