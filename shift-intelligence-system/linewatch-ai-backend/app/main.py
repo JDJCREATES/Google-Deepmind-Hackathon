@@ -1,6 +1,6 @@
 """FastAPI application entry point for LineWatch AI backend."""
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.utils.logging import setup_logging, get_agent_logger
@@ -19,14 +19,18 @@ async def lifespan(app: FastAPI):
     logger.info(f"🏭 Production Lines: {settings.num_production_lines}")
     logger.info(f"🤖 Gemini Model: {settings.gemini_model}")
     
-    # TODO: Initialize agents here
-    # TODO: Start simulation
+    # Initialize agents
+    # In a real app we'd load agent instances here if they needed persistence
+    
+    # Start Simulation Service
+    # Note: Simulation starts in "stopped" state, waits for API call
+    # await simulation.start()  # Uncomment to auto-start
     
     yield
     
     # Shutdown
     logger.info("👋 LineWatch AI Backend shutting down...")
-    # TODO: Cleanup agents
+    await simulation.stop()
 
 
 # Create FastAPI app
@@ -46,6 +50,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# API Routers
+from app.api.routers import simulation as sim_router
+from app.api.routers import human as human_router
+from app.api.routers import hypothesis as hypo_router
+
+app.include_router(sim_router.router, prefix="/api")
+app.include_router(human_router.router, prefix="/api")
+app.include_router(hypo_router.router, prefix="/api")
+
 
 @app.get("/")
 async def root():
@@ -56,6 +69,7 @@ async def root():
         "status": "operational",
         "department": settings.department_name,
         "lines": settings.num_production_lines,
+        "simulation": "active" if simulation.is_running else "stopped"
     }
 
 
@@ -64,12 +78,20 @@ async def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
 
+# WebSocket Endpoint
+from app.services.websocket import manager
 
-# TODO: Add API routers
-# - /api/department
-# - /api/agents
-# - /api/alerts
-# - /ws/stream (WebSocket)
+@app.websocket("/ws/stream")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            # Keep connection alive and listen for client messages (heartbeats)
+            data = await websocket.receive_text()
+            # Echo or process if needed
+            # await websocket.send_text(f"Message received: {data}")
+    except Exception:
+        manager.disconnect(websocket)
 
 
 if __name__ == "__main__":
