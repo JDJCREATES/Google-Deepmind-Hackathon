@@ -37,14 +37,24 @@ const AgentReasoningGraph: React.FC = () => {
             const allNodes: any[] = [];
             const allEdges: any[] = [];
             
-            // Layout constants - improved spacing
-            const orchestratorX = 550;
-            const orchestratorY = 20;
-            const agentX = 20;
-            const agentStartY = 100;
-            const agentSpacingY = 140; // More vertical space between agent rows
-            const hypothesisStartX = 180;
-            const hypothesisSpacingX = 105; // More horizontal space between hypothesis nodes
+            // Layout constants - Orchestrator left, agents stacked vertically
+            const orchestratorX = 100;
+            const orchestratorY = 120; // Center vertically for 4 agents
+            
+            // Agent positions: stacked vertically to the right of orchestrator
+            const agentX = 280;
+            const agentStartY = 30;
+            const agentSpacingY = 100; // Good vertical separation between rows
+            
+            const agentPositions = [
+                { x: agentX, y: agentStartY },                      // Production Agent (top)
+                { x: agentX, y: agentStartY + agentSpacingY },      // Compliance Agent
+                { x: agentX, y: agentStartY + agentSpacingY * 2 },  // Staffing Agent
+                { x: agentX, y: agentStartY + agentSpacingY * 3 },  // Maintenance Agent (bottom)
+            ];
+            
+            const hypothesisStartX = 450; // Start hypothesis pipeline to the right of agents
+            const hypothesisSpacingX = 95; // Horizontal spacing between hypothesis nodes
             
             // Add Orchestrator
             const orchestrator = agents.find((a: any) => a.type === 'orchestrator');
@@ -59,28 +69,28 @@ const AgentReasoningGraph: React.FC = () => {
                         color: '#fff',
                         border: '3px solid #F59E0B',
                         borderRadius: 10,
-                        padding: '14px 24px',
-                        fontSize: 13,
+                        padding: '12px 20px',
+                        fontSize: 12,
                         fontWeight: 800,
                         textAlign: 'center',
                         boxShadow: '0 6px 24px rgba(245, 158, 11, 0.35)',
                     },
-                    sourcePosition: Position.Bottom,
-                    targetPosition: Position.Top,
+                    sourcePosition: Position.Right,
+                    targetPosition: Position.Left,
                 });
             }
             
-            // Add domain agents (stacked vertically on left)
+            // Add domain agents stacked vertically
             const domainAgents = agents.filter((a: any) => a.type === 'agent');
             domainAgents.forEach((agent: any, i: number) => {
-                const agentY = agentStartY + i * agentSpacingY;
+                const pos = agentPositions[i] || { x: 20, y: 100 + i * 100 };
                 
                 // Agent node
                 allNodes.push({
                     id: agent.id,
                     type: 'default',
                     data: { label: agent.label, nodeType: 'agent' },
-                    position: { x: agentX, y: agentY },
+                    position: pos,
                     style: {
                         background: '#1E40AF',
                         color: '#fff',
@@ -93,7 +103,7 @@ const AgentReasoningGraph: React.FC = () => {
                         textAlign: 'center',
                     },
                     sourcePosition: Position.Right,
-                    targetPosition: Position.Top,
+                    targetPosition: Position.Left,
                 });
                 
                 // Orchestrator → Agent edge
@@ -106,14 +116,15 @@ const AgentReasoningGraph: React.FC = () => {
                     markerEnd: { type: MarkerType.ArrowClosed, color: '#F59E0B' },
                 });
                 
-                // Add hypothesis nodes for this agent (horizontal row)
+                // Add hypothesis nodes for this agent (HORIZONTAL pipeline - all same Y)
                 hypothesis_nodes.forEach((hNode: any, j: number) => {
                     const nodeId = `${agent.id}_${hNode.id}`;
+                    
                     allNodes.push({
                         id: nodeId,
                         type: 'default',
                         data: { label: hNode.label.split(' ').slice(1).join(' '), fullLabel: hNode.label, nodeType: hNode.type },
-                        position: { x: hypothesisStartX + j * hypothesisSpacingX, y: agentY },
+                        position: { x: hypothesisStartX + j * hypothesisSpacingX, y: pos.y }, // Same Y as agent - horizontal flow!
                         style: getHypothesisStyle(hNode.type),
                         sourcePosition: Position.Right,
                         targetPosition: Position.Left,
@@ -122,6 +133,7 @@ const AgentReasoningGraph: React.FC = () => {
                 
                 // Add hypothesis edges for this agent
                 hypothesis_edges.forEach((hEdge: any) => {
+                    const isLoop = hEdge.conditional === 'gather_more';
                     allEdges.push({
                         id: `${agent.id}_${hEdge.id}`,
                         source: `${agent.id}_${hEdge.source}`,
@@ -129,13 +141,13 @@ const AgentReasoningGraph: React.FC = () => {
                         type: 'smoothstep',
                         animated: false,
                         style: {
-                            stroke: hEdge.conditional === 'gather_more' ? '#EAB308' : '#4B5563',
-                            strokeWidth: hEdge.conditional ? 1.5 : 1,
-                            strokeDasharray: hEdge.conditional === 'gather_more' ? '4,4' : undefined,
+                            stroke: isLoop ? '#EAB308' : '#4B5563',
+                            strokeWidth: isLoop ? 2 : 1,
+                            strokeDasharray: isLoop ? '5,5' : undefined,
                         },
-                        markerEnd: { type: MarkerType.ArrowClosed, color: '#4B5563', width: 10, height: 10 },
-                        label: hEdge.conditional === 'gather_more' ? '⟲' : undefined,
-                        labelStyle: { fontSize: 9, fill: '#9CA3AF' },
+                        markerEnd: { type: MarkerType.ArrowClosed, color: isLoop ? '#EAB308' : '#4B5563', width: 12, height: 12 },
+                        label: isLoop ? '⟲ retry' : undefined,
+                        labelStyle: { fontSize: 8, fill: '#FCD34D', fontWeight: 600 },
                     });
                 });
                 

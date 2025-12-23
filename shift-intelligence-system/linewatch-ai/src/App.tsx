@@ -65,14 +65,14 @@ function App() {
         </div>
       </header>
 
-      {/* MAIN GRID: Top Row = Floor + Graph, Bottom Row = Activity Log */}
+      {/* MAIN GRID: Top Row = Floor + Activity Log, Bottom Row = Reasoning Graph */}
       <main className="flex-1 flex flex-col p-3 gap-3 min-h-0">
         
-        {/* TOP ROW: Floor Map + Reasoning Graph */}
-        <div className="flex gap-3 h-[55%] min-h-[300px]">
+        {/* TOP ROW: Floor Map + Activity Log */}
+        <div className="flex gap-3 flex-1 min-h-0">
           
-          {/* FLOOR MAP */}
-          <div className="flex-1 flex flex-col min-w-0">
+          {/* FLOOR MAP - Priority: always fully visible */}
+          <div className="flex flex-col shrink-0" style={{ width: '75%' }}>
             <div className="bg-stone-900 border border-stone-800 rounded-t-md px-3 py-1.5 flex items-center gap-2">
                 <FaIndustry className="text-amber-500 text-xs" />
                 <h2 className="font-semibold text-stone-300 text-xs tracking-wide">PRODUCTION FLOOR</h2>
@@ -82,21 +82,15 @@ function App() {
             </div>
           </div>
 
-          {/* REASONING GRAPH */}
-          <div className="w-[40%] min-w-[400px] flex flex-col">
-            <div className="bg-stone-900 border border-stone-800 rounded-t-md px-3 py-1.5 flex items-center gap-2">
-                <FaNetworkWired className="text-amber-500 text-xs" />
-                <h2 className="font-semibold text-stone-300 text-xs tracking-wide">AGENT REASONING FLOW</h2>
-            </div>
-            <div className="flex-1 rounded-b-md overflow-hidden bg-stone-950 border-x border-b border-stone-800">
-                <AgentReasoningGraph />
-            </div>
+          {/* ACTIVITY LOG - Right side */}
+          <div className="flex-1 min-w-[280px] flex flex-col min-h-0">
+            <AgentActivityLog />
           </div>
         </div>
 
-        {/* BOTTOM ROW: Activity Log */}
-        <div className="flex-1 min-h-[200px]">
-            <AgentActivityLog />
+        {/* BOTTOM ROW: Agent Reasoning Graph */}
+        <div className="h-[400px] shrink-0 overflow-hidden bg-stone-950 border border-stone-800 rounded-md">
+            <AgentReasoningGraph />
         </div>
       </main>
     </div>
