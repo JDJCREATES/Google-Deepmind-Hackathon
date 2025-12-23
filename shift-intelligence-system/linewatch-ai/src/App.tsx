@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useStore } from './store/useStore';
 import FloorMap from './components/FloorMap';
 import SidebarFeed from './components/SidebarFeed';
-import AgentFlowGraph from './components/AgentFlowGraph';
+import HierarchicalAgentGraph from './components/HierarchicalAgentGraph';
 import { FaPlay, FaStop, FaBolt, FaNetworkWired } from 'react-icons/fa';
 import clsx from 'clsx';
 import { api } from './services/api';
@@ -85,10 +85,10 @@ function App() {
             {/* HYPOTHESIS MARKET VISUALIZATION */}
             <div className="h-1/3 bg-stone-900 rounded-md border border-stone-700 shadow-sm p-1 flex flex-col overflow-hidden">
                 <h2 className="font-bold text-stone-300 text-xs p-2 flex items-center gap-2">
-                    <FaNetworkWired className="text-primary-500"/> AGENT FLOW
+                    <FaNetworkWired className="text-primary-500"/> MULTI-AGENT REASONING
                 </h2>
                 <div className="flex-1">
-                    <AgentFlowGraph />
+                    <HierarchicalAgentGraph />
                 </div>
             </div>
             

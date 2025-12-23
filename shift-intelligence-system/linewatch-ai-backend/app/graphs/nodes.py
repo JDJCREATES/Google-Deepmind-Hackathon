@@ -128,6 +128,17 @@ async def generate_hypotheses_node(state: HypothesisMarketState) -> Dict[str, An
     """
     logger.info("💡 Generating hypotheses via distributed agent market")
     
+    # Broadcast start of hypothesis generation
+    from app.services.websocket import manager
+    await manager.broadcast({
+        "type": "reasoning_phase",
+        "data": {
+            "phase": "hypothesis_generation",
+            "signal": state["signal_description"],
+            "timestamp": datetime.now().isoformat()
+        }
+    })
+    
     # Import agents here to avoid circular imports at module level
     from app.agents.production.production_agent import ProductionAgent
     from app.agents.staffing.staffing_agent import StaffingAgent
@@ -181,10 +192,29 @@ async def generate_hypotheses_node(state: HypothesisMarketState) -> Dict[str, An
             framework="RCA",
             description=f"Generic investigation needed for {signal['description']}",
             initial_confidence=0.3,
-            proposed_by="SystemFallback"
+            proposedby="SystemFallback"
         ))
         
     logger.info(f"✅ Aggregated {len(hypotheses)} hypotheses from agents")
+    
+    # Broadcast generated hypotheses for frontend visualization
+    await manager.broadcast({
+        "type": "hypotheses_generated",
+        "data": {
+            "count": len(hypotheses),
+            "hypotheses": [
+                {
+                    "id": h.hypothesis_id,
+                    "description": h.description,
+                    "confidence": h.initial_confidence,
+                    "proposed_by": h.proposed_by,
+                    "cost_if_wrong": h.cost_of_being_wrong
+                }
+                for h in hypotheses
+            ],
+            "timestamp": datetime.now().isoformat()
+        }
+    })
     
     return {"hypotheses": hypotheses}
 
