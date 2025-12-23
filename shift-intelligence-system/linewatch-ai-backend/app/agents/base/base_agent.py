@@ -194,6 +194,19 @@ class BaseAgent(ABC):
             requires_verification=requires_verification,
         )
         
+        # Log reasoning trace for frontend visualization
+        try:
+            from app.api.routers.graph import add_reasoning_trace
+            add_reasoning_trace(
+                agent_name=self.agent_name,
+                step_name="reason",
+                thought_process=thoughts[:300],
+                confidence=confidence,
+                decision=f"Proposed {len(proposed_actions)} actions" if proposed_actions else None
+            )
+        except Exception:
+            pass  # Non-critical, don't fail reasoning
+        
         self.logger.info(
             f"💡 [{self.agent_name}] Reasoning complete. "
             f"Confidence: {confidence:.2f}, "

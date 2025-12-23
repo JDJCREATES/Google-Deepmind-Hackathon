@@ -33,24 +33,24 @@ class LayoutService:
         
         # Zone dimensions
         warehouse_w = 80
-        maintenance_h = 50  # Taller as requested (was 35)
+        maintenance_h = 50
         breakroom_w = 100
         main_conveyor_h = 30
         
         # Key layout positions (calculated from bottom up to avoid gaps)
-        # Bringing everything up slightly to leave space at bottom (User Req #4)
-        bottom_spacer = 20
+        # Bringing everything UP significantly (User Req: "bring machines and people up")
+        bottom_spacer = 60 
         main_conveyor_y = canvas_h - main_conveyor_h - bottom_spacer
         
-        # Machine stack dimensions (70% of previous size) (User Req #3)
-        machine_w = 25  # was 35
-        machine_h = 32  # was 45
-        equip_w = 20    # was 28
-        equip_h = 22    # was 30
+        # Machine stack dimensions (User Req: "smaller width but taller vertically")
+        machine_w = 22  # Narrower
+        machine_h = 42  # Taller
+        equip_w = 18     
+        equip_h = 20    
         
         # Position machines just above the main conveyor
         # Stack: Machine -> Equipment -> Connector -> Main Conveyor
-        connector_h = 15 # Short, tight connector
+        connector_h = 10 # Short, tight connector
         machine_zone_y = main_conveyor_y - (connector_h + equip_h + machine_h + 5)
         
         # Operators sit just above the machines
@@ -105,7 +105,7 @@ class LayoutService:
                     "x": canvas_w - breakroom_w,
                     "y": canvas_h * 0.6,
                     "width": breakroom_w,
-                    "height": canvas_h * 0.4 - main_conveyor_h - bottom_spacer,
+                    "height": canvas_h * 0.4 - 20, # Fill to near bottom
                     "label": "Offices",
                     "color": "#334155"
                 },
@@ -127,16 +127,22 @@ class LayoutService:
         }
         
         # Production area bounds
-        # Shift start X slightly right to make room for vertical conveyor curve (User Req #1)
-        curve_allowance = 40
-        prod_start_x = warehouse_w + curve_allowance + 10
-        prod_end_x = canvas_w - breakroom_w - 15
+        # Shift start X slightly right to make room for vertical conveyor curve
+        # "look at all that space" -> use a curve allowance that fills the gap but looks nice
+        curve_allowance = 45 
+        prod_start_x = warehouse_w + curve_allowance
+        prod_end_x = canvas_w - breakroom_w - 20
         available_width = prod_end_x - prod_start_x
         line_spacing = available_width / 20
+        
+        # Store last machine X to end main conveyor there
+        last_machine_right_x = 0
         
         # Generate 20 production lines (vertical stacks feeding down to conveyor)
         for i in range(1, 21):
             x = prod_start_x + (i - 0.5) * line_spacing - machine_w / 2
+            # Update last machine X
+            last_machine_right_x = x + machine_w + 10 # Little buffer
             
             layout["lines"].append({
                 "id": i,
@@ -186,46 +192,48 @@ class LayoutService:
         
         # Conveyor segments
         # 1. Main conveyor (bottom) - Horizontal
+        # Calculate width to stop exactly at last machine (User Req)
+        main_conv_total_width = last_machine_right_x - (warehouse_w + curve_allowance)
+        
         segment_count = 5
-        segment_width = (canvas_w - warehouse_w - breakroom_w) / segment_count
+        segment_width = main_conv_total_width / segment_count
+        
         for i in range(segment_count):
             layout["conveyors"].append({
                 "id": f"main_conv_{i+1}",
-                # Start from warehouse_w but overlap slightly to leave room for curve
-                "x": warehouse_w + i * segment_width + (curve_allowance if i == 0 else 0),
+                "x": (warehouse_w + curve_allowance) + i * segment_width,
                 "y": main_conveyor_y,
-                "width": segment_width - (curve_allowance if i == 0 else 0),
+                "width": segment_width,
                 "height": main_conveyor_h,
                 "direction": "horizontal",
                 "status": "running"
             })
             
-        # 2. Vertical Connector Curve (Left side) (User Req #1)
+        # 2. Vertical Connector Curve (Left side) 
         # Connects main conveyor up to the feeders
-        feeder_spacing = 30
+        feeder_spacing = 35 
         top_feeder_y = main_conveyor_y - (4 * feeder_spacing) 
         
         layout["conveyors"].append({
             "id": "vert_curve_conv",
-            "x": warehouse_w,
+            "x": warehouse_w, # Starts at warehouse edge
             "y": top_feeder_y,
-            "width": curve_allowance,
+            "width": curve_allowance + 2, # Connects to start of main conveyor
             "height": main_conveyor_y + main_conveyor_h - top_feeder_y,
             "direction": "vertical",
             "status": "running"
         })
         
         # 3. Warehouse feeder conveyors (Horizontal going INTO vertical curve)
-        # (User Req #6: Better spacing, fixed width)
         for i in range(4):
             y_pos = main_conveyor_y - ((i + 1) * feeder_spacing)
-            feeder_h = 15
+            feeder_h = 10 
             
             layout["conveyors"].append({
                 "id": f"feeder_{i+1}",
                 "x": 0,
-                "y": y_pos + (main_conveyor_h - feeder_h)/2 + 8, # Approx alignment
-                "width": warehouse_w + 5, # Connect into vertical curve slightly
+                "y": y_pos + (main_conveyor_h - feeder_h)/2 + 8, 
+                "width": warehouse_w + 10, # Connect slightly into curve
                 "height": feeder_h,
                 "direction": "horizontal",
                 "status": "running"

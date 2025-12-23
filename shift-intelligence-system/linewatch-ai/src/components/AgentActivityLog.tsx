@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useStore } from '../store/useStore';
-import { FaRobot, FaCog, FaCheckCircle, FaExclamationTriangle, FaLightbulb, FaSearch, FaBalanceScale, FaBolt, FaChevronDown, FaChevronRight } from 'react-icons/fa';
+import { FaRobot, FaCog, FaLightbulb, FaSearch, FaBalanceScale, FaBolt, FaChevronDown, FaChevronRight } from 'react-icons/fa';
 import { MdPsychology } from 'react-icons/md';
 
 interface ReasoningEvent {
@@ -98,13 +98,13 @@ const AgentActivityLog: React.FC = () => {
     return (
         <div className="h-full flex flex-col bg-stone-950 border border-stone-800 rounded-md overflow-hidden">
             {/* Header */}
-            <div className="flex items-center justify-between px-4 py-2 bg-stone-900 border-b border-stone-800">
+            <div className="flex items-center justify-between px-4 py-3 bg-stone-900 border-b border-stone-800 shrink-0">
                 <div className="flex items-center gap-2">
-                    <FaRobot className="text-amber-500" />
+                    <FaRobot className="text-amber-500 shrink-0" />
                     <h2 className="font-bold text-stone-200 text-sm tracking-wide">AGENT ACTIVITY LOG</h2>
                 </div>
                 <div className="flex items-center gap-4 text-xs text-stone-500">
-                    <span>{events.length} events</span>
+                    <span className="hidden sm:inline">{events.length} events</span>
                     <span className="flex items-center gap-1">
                         <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
                         LIVE
@@ -112,8 +112,8 @@ const AgentActivityLog: React.FC = () => {
                 </div>
             </div>
             
-            {/* Column Headers */}
-            <div className="grid grid-cols-12 gap-2 px-4 py-2 bg-stone-900/50 border-b border-stone-800 text-xs font-semibold text-stone-500 uppercase tracking-wider">
+            {/* Column Headers - Hidden on small screens */}
+            <div className="hidden lg:grid grid-cols-12 gap-2 px-4 py-2 bg-stone-900/50 border-b border-stone-800 text-xs font-semibold text-stone-500 uppercase tracking-wider shrink-0">
                 <div className="col-span-1">Time</div>
                 <div className="col-span-2">Agent</div>
                 <div className="col-span-2">Phase</div>
@@ -135,42 +135,75 @@ const AgentActivityLog: React.FC = () => {
                             className={`border-l-4 ${getTypeStyle(event.type)} border-b border-stone-800/50 hover:bg-stone-800/30 transition-colors`}
                         >
                             <div
-                                className="grid grid-cols-12 gap-2 px-4 py-2 cursor-pointer"
+                                className="px-4 py-3 cursor-pointer"
                                 onClick={() => toggleExpand(event.id)}
                             >
-                                <div className="col-span-1 text-xs text-stone-500 font-mono">
-                                    {event.timestamp.split(':').slice(0, 2).join(':')}
+                                {/* Mobile/Tablet Layout */}
+                                <div className="lg:hidden space-y-2">
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                                            {getIcon(event.type)}
+                                            <span className="text-xs text-stone-300 font-medium break-words">
+                                                {event.agent}
+                                            </span>
+                                        </div>
+                                        <span className="text-xs text-stone-500 font-mono shrink-0">
+                                            {event.timestamp.split(':').slice(0, 2).join(':')}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wide shrink-0 ${
+                                            event.type === 'hypothesis' ? 'bg-blue-900/50 text-blue-300' :
+                                            event.type === 'evidence' ? 'bg-green-900/50 text-green-300' :
+                                            event.type === 'belief' ? 'bg-orange-900/50 text-orange-300' :
+                                            event.type === 'action' ? 'bg-pink-900/50 text-pink-300' :
+                                            event.type === 'decision' ? 'bg-amber-900/50 text-amber-300' :
+                                            'bg-stone-800 text-stone-400'
+                                        }`}>
+                                            {event.phase}
+                                        </span>
+                                    </div>
+                                    <div className="text-xs text-stone-300 break-words pl-6">
+                                        {event.title}
+                                    </div>
                                 </div>
-                                <div className="col-span-2 text-xs text-stone-300 font-medium truncate">
-                                    {event.agent}
-                                </div>
-                                <div className="col-span-2 text-xs">
-                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${
-                                        event.type === 'hypothesis' ? 'bg-blue-900/50 text-blue-300' :
-                                        event.type === 'evidence' ? 'bg-green-900/50 text-green-300' :
-                                        event.type === 'belief' ? 'bg-orange-900/50 text-orange-300' :
-                                        event.type === 'action' ? 'bg-pink-900/50 text-pink-300' :
-                                        event.type === 'decision' ? 'bg-amber-900/50 text-amber-300' :
-                                        'bg-stone-800 text-stone-400'
-                                    }`}>
-                                        {event.phase}
-                                    </span>
-                                </div>
-                                <div className="col-span-7 flex items-center gap-2 text-xs text-stone-300">
-                                    {getIcon(event.type)}
-                                    <span className="truncate">{event.title}</span>
-                                    {event.details && (
-                                        expandedEvents.has(event.id) 
-                                            ? <FaChevronDown className="text-stone-500 ml-auto" />
-                                            : <FaChevronRight className="text-stone-500 ml-auto" />
-                                    )}
+
+                                {/* Desktop Layout */}
+                                <div className="hidden lg:grid lg:grid-cols-12 gap-3 items-center">
+                                    <div className="col-span-1 text-xs text-stone-500 font-mono shrink-0">
+                                        {event.timestamp.split(':').slice(0, 2).join(':')}
+                                    </div>
+                                    <div className="col-span-2 text-xs text-stone-300 font-medium break-words">
+                                        {event.agent}
+                                    </div>
+                                    <div className="col-span-2 text-xs">
+                                        <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wide inline-block ${
+                                            event.type === 'hypothesis' ? 'bg-blue-900/50 text-blue-300' :
+                                            event.type === 'evidence' ? 'bg-green-900/50 text-green-300' :
+                                            event.type === 'belief' ? 'bg-orange-900/50 text-orange-300' :
+                                            event.type === 'action' ? 'bg-pink-900/50 text-pink-300' :
+                                            event.type === 'decision' ? 'bg-amber-900/50 text-amber-300' :
+                                            'bg-stone-800 text-stone-400'
+                                        }`}>
+                                            {event.phase}
+                                        </span>
+                                    </div>
+                                    <div className="col-span-7 flex items-center gap-2 text-xs text-stone-300 min-w-0">
+                                        {getIcon(event.type)}
+                                        <span className="break-words flex-1">{event.title}</span>
+                                        {event.details && (
+                                            expandedEvents.has(event.id) 
+                                                ? <FaChevronDown className="text-stone-500 shrink-0" />
+                                                : <FaChevronRight className="text-stone-500 shrink-0" />
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                             
                             {/* Expanded Details */}
                             {expandedEvents.has(event.id) && event.details && (
                                 <div className="px-4 py-3 bg-stone-900/50 border-t border-stone-800/50">
-                                    <pre className="text-xs text-stone-400 font-mono whitespace-pre-wrap">
+                                    <pre className="text-xs text-stone-400 font-mono whitespace-pre-wrap break-words">
                                         {event.details}
                                     </pre>
                                 </div>
@@ -184,3 +217,4 @@ const AgentActivityLog: React.FC = () => {
 };
 
 export default AgentActivityLog;
+

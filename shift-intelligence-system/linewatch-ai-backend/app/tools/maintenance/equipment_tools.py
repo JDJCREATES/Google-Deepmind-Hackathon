@@ -157,3 +157,92 @@ async def create_work_order(
     except Exception as e:
         logger.error(f"❌ Error creating work order: {e}")
         raise
+
+
+# ============================================================================
+# GEMINI 3 VISION INSPECTION TOOL
+# ============================================================================
+
+class VisualInspectionInput(BaseModel):
+    """Input schema for visual inspection."""
+    image_data: str = Field(description="Base64-encoded image or file path")
+    equipment_type: str = Field(default="conveyor motor", description="Type of equipment")
+    line_number: Optional[int] = Field(default=None, description="Line number if known")
+
+
+@tool(args_schema=VisualInspectionInput)
+async def inspect_machine_part(
+    image_data: str,
+    equipment_type: str = "conveyor motor",
+    line_number: Optional[int] = None
+) -> Dict[str, Any]:
+    """
+    Visually inspect a machine part using Gemini 3.0 Flash multimodal.
+    
+    This tool uses real AI vision to analyze equipment images for:
+    - Wear patterns and degradation
+    - Contamination or debris
+    - Alignment issues
+    - Predicted remaining lifespan
+    
+    Returns detailed maintenance recommendations.
+    """
+    logger.info(f"🔍 Visual inspection: {equipment_type}" + (f" (Line {line_number})" if line_number else ""))
+    
+    try:
+        from app.services.gemini_vision import get_gemini_vision_service
+        
+        vision_service = get_gemini_vision_service()
+        result = await vision_service.inspect_equipment(
+            image_data=image_data,
+            equipment_type=equipment_type
+        )
+        
+        if result.get("success"):
+            logger.info(f"✅ Inspection complete: {result.get('thought_signature', {}).get('hash', 'N/A')[:8]}")
+            
+            # Log to graph trace API for visualization
+            try:
+                from app.api.routers.graph import add_reasoning_trace
+                add_reasoning_trace(
+                    agent_name="MaintenanceAgent",
+                    step_name="visual_inspection",
+                    thought_process=result.get("assessment", "")[:300],
+                    confidence=0.85,
+                    decision=f"Inspected {equipment_type}"
+                )
+            except Exception:
+                pass  # Non-critical
+            
+            return {
+                "success": True,
+                "equipment_type": equipment_type,
+                "line_number": line_number,
+                "assessment": result.get("assessment"),
+                "thought_signature": result.get("thought_signature"),
+                "recommendation": "See assessment for details",
+            }
+        else:
+            logger.warning(f"⚠️ Inspection fallback: {result.get('error')}")
+            return {
+                "success": False,
+                "error": result.get("error"),
+                "fallback": True,
+                "recommendation": "Manual inspection required",
+            }
+            
+    except ImportError as e:
+        logger.error(f"❌ GeminiVisionService not available: {e}")
+        return {
+            "success": False,
+            "error": "Vision service not initialized",
+            "fallback": True,
+        }
+    except Exception as e:
+        logger.error(f"❌ Inspection error: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "fallback": True,
+        }
+

@@ -46,7 +46,7 @@ export const useStore = create<State>((set, get) => ({
 
         socket.onopen = () => {
             set({ isConnected: true });
-            get().logs.push('Connected to Neural Stream');
+            get().logs.push('Connected to Agent system');
         };
 
         socket.onclose = () => {
@@ -64,8 +64,15 @@ export const useStore = create<State>((set, get) => ({
     
     toggleSimulation: async () => {
         try {
-            await api.simulation.start();
-        } catch(e) { console.error(e) }
+            const status = await api.simulation.getStatus();
+            if (status.running) {
+                await api.simulation.stop();
+            } else {
+                await api.simulation.start();
+            }
+        } catch(e) { 
+            console.error('Failed to toggle simulation:', e);
+        }
     }
 }));
 

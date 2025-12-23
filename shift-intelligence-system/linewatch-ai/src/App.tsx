@@ -14,12 +14,13 @@ function App() {
   useEffect(() => {
     connectWebSocket();
     
+    // Poll simulation status every 5 seconds (reduced from 2s to minimize log spam)
     const interval = setInterval(async () => {
         try {
             const status = await api.simulation.getStatus();
             setSimStatus({running: status.running, uptime: status.uptime_minutes});
         } catch(e) {/* ignore */}
-    }, 2000);
+    }, 5000);
     
     return () => clearInterval(interval);
   }, []);
