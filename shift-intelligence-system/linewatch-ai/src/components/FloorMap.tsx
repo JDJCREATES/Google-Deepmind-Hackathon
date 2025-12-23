@@ -1,52 +1,91 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Stage, Layer, Rect, Text, Group, RegularPolygon, Line as KonvaLine } from 'react-konva';
 import { useStore } from '../store/useStore';
 import type { Line, Camera, Zone } from '../types';
 
 const THEME = {
-    bg: '#FDFBF7',
-    grid: '#E5E7EB',
+    bg: '#1C1917',
+    grid: '#292524',
     zone: {
-        production: '#E2E8F0', // slate-200
-        break_room: '#F1F5F9', // slate-100
+        production: '#292524',
+        break_room: '#1C1917',
     },
     line: {
-        ok: '#10B981', // emerald-500
-        warning: '#F59E0B', // amber-500
-        critical: '#EF4444', // red-500
+        ok: '#10B981',
+        warning: '#F59E0B',
+        critical: '#EF4444',
     }
 };
 
 const FloorMap: React.FC = () => {
     const { layout, fetchLayout } = useStore();
-    const [scale] = useState(0.8); // Adjust to fit screen
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [dimensions, setDimensions] = useState({ width: 600, height: 400 });
 
     useEffect(() => {
         fetchLayout();
     }, []);
+    
+    // Responsive sizing
+    useEffect(() => {
+        const updateSize = () => {
+            if (containerRef.current) {
+                const { clientWidth, clientHeight } = containerRef.current;
+                setDimensions({ width: clientWidth, height: clientHeight });
+            }
+        };
+        
+        updateSize();
+        window.addEventListener('resize', updateSize);
+        
+        // ResizeObserver for container changes
+        const resizeObserver = new ResizeObserver(updateSize);
+        if (containerRef.current) {
+            resizeObserver.observe(containerRef.current);
+        }
+        
+        return () => {
+            window.removeEventListener('resize', updateSize);
+            resizeObserver.disconnect();
+        };
+    }, []);
 
-    if (!layout) return <div className="p-10 text-stone-500">Loading Floor Plan...</div>;
+    if (!layout) return <div className="p-6 text-stone-500 text-sm">Loading Floor Plan...</div>;
 
     const { zones, lines, cameras } = layout;
+    
+    // Calculate scale to fit layout in container
+    const layoutWidth = layout.dimensions.width;
+    const layoutHeight = layout.dimensions.height;
+    const scaleX = (dimensions.width - 20) / layoutWidth;
+    const scaleY = (dimensions.height - 20) / layoutHeight;
+    const scale = Math.min(scaleX, scaleY, 1);
 
     return (
-        <div className="w-full h-full overflow-hidden bg-background border border-gray-200 rounded-md shadow-sm">
-            <Stage width={window.innerWidth * 0.7} height={600} scaleX={scale} scaleY={scale}>
+        <div ref={containerRef} className="w-full h-full overflow-hidden bg-stone-900">
+            <Stage 
+                width={dimensions.width} 
+                height={dimensions.height} 
+                scaleX={scale} 
+                scaleY={scale}
+                x={10}
+                y={10}
+            >
                 <Layer>
-                    {/* Background Grid (Optional) */}
-                    <Rect x={0} y={0} width={layout.dimensions.width} height={layout.dimensions.height} fill={THEME.bg} />
+                    {/* Background */}
+                    <Rect x={0} y={0} width={layoutWidth} height={layoutHeight} fill={THEME.bg} cornerRadius={4} />
                     
-                    {/* 1. Zones */}
+                    {/* Zones */}
                     {zones.map((zone) => (
                         <ZoneComp key={zone.id} zone={zone} />
                     ))}
 
-                    {/* 2. Production Lines */}
+                    {/* Production Lines */}
                     {lines.map((line) => (
                         <LineComp key={line.id} line={line} />
                     ))}
 
-                    {/* 3. Cameras */}
+                    {/* Cameras */}
                     {cameras.map((cam) => (
                         <CameraComp key={cam.id} camera={cam} />
                     ))}

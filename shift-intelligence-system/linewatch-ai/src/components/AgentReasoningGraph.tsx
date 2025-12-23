@@ -37,14 +37,14 @@ const AgentReasoningGraph: React.FC = () => {
             const allNodes: any[] = [];
             const allEdges: any[] = [];
             
-            // Layout constants
-            const orchestratorX = 450;
-            const orchestratorY = 30;
-            const agentX = 30;
-            const agentStartY = 120;
-            const agentSpacingY = 180;
-            const hypothesisStartX = 200;
-            const hypothesisSpacingX = 100;
+            // Layout constants - improved spacing
+            const orchestratorX = 550;
+            const orchestratorY = 20;
+            const agentX = 20;
+            const agentStartY = 100;
+            const agentSpacingY = 140; // More vertical space between agent rows
+            const hypothesisStartX = 180;
+            const hypothesisSpacingX = 105; // More horizontal space between hypothesis nodes
             
             // Add Orchestrator
             const orchestrator = agents.find((a: any) => a.type === 'orchestrator');
@@ -85,11 +85,11 @@ const AgentReasoningGraph: React.FC = () => {
                         background: '#1E40AF',
                         color: '#fff',
                         border: '2px solid #3B82F6',
-                        borderRadius: 6,
-                        padding: '10px 16px',
-                        fontSize: 11,
+                        borderRadius: 4,
+                        padding: '6px 10px',
+                        fontSize: 10,
                         fontWeight: 700,
-                        minWidth: 150,
+                        minWidth: 130,
                         textAlign: 'center',
                     },
                     sourcePosition: Position.Right,
@@ -171,11 +171,12 @@ const AgentReasoningGraph: React.FC = () => {
             background: c.bg,
             color: '#fff',
             border: `1.5px solid ${c.border}`,
-            borderRadius: 4,
-            padding: '5px 8px',
-            fontSize: 8,
+            borderRadius: 3,
+            padding: '4px 6px',
+            fontSize: 7,
             fontWeight: 600,
-            minWidth: 70,
+            minWidth: 60,
+            maxWidth: 80,
             textAlign: 'center' as const,
         };
     };
