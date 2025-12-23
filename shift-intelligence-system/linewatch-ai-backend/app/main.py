@@ -20,6 +20,14 @@ async def lifespan(app: FastAPI):
     logger.info(f"🏭 Production Lines: {settings.num_production_lines}")
     logger.info(f"🤖 Gemini Model: {settings.gemini_model}")
     
+    # STRICT API KEY CHECK - System will not work without it
+    if not settings.google_api_key:
+        logger.error("❌ GOOGLE_API_KEY is not set! The system requires a valid API key to function.")
+        logger.error("❌ Please set GOOGLE_API_KEY in your .env file and restart.")
+        raise RuntimeError("GOOGLE_API_KEY is required. No fake AI data allowed - only simulated input data is mocked.")
+    else:
+        logger.info("✅ GOOGLE_API_KEY is configured")
+    
     # Initialize agents
     # In a real app we'd load agent instances here if they needed persistence
     

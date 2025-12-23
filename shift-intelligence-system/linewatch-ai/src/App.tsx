@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useStore } from './store/useStore';
 import FloorMap from './components/FloorMap';
 import SidebarFeed from './components/SidebarFeed';
+import AgentFlowGraph from './components/AgentFlowGraph';
 import { FaPlay, FaStop, FaBolt, FaNetworkWired } from 'react-icons/fa';
 import clsx from 'clsx';
 import { api } from './services/api';
@@ -81,13 +82,13 @@ function App() {
 
         {/* RIGHT: INTELLIGENCE SIDEBAR (4 Cols) */}
         <div className="col-span-4 flex flex-col gap-4">
-            {/* HYPOTHESIS MARKET VISUALIZATION (Placeholder for Phase 2) */}
-            <div className="h-1/3 bg-white rounded-md border border-stone-200 shadow-sm p-3 flex flex-col">
-                <h2 className="font-bold text-stone-700 text-xs mb-2 flex items-center gap-2">
-                    <FaNetworkWired className="text-primary-500"/> HYPOTHESIS MARKET
+            {/* HYPOTHESIS MARKET VISUALIZATION */}
+            <div className="h-1/3 bg-stone-900 rounded-md border border-stone-700 shadow-sm p-1 flex flex-col overflow-hidden">
+                <h2 className="font-bold text-stone-300 text-xs p-2 flex items-center gap-2">
+                    <FaNetworkWired className="text-primary-500"/> AGENT FLOW
                 </h2>
-                <div className="flex-1 bg-stone-50 rounded border border-stone-100 flex items-center justify-center text-xs text-stone-400">
-                    React Flow Graph Visualization
+                <div className="flex-1">
+                    <AgentFlowGraph />
                 </div>
             </div>
             

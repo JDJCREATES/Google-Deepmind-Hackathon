@@ -70,15 +70,13 @@ export const useStore = create<State>((set, get) => ({
 }));
 
 function handleIncomingMessage(set: any, get: any, msg: any) {
-    // Add to log stream
     const timestamp = new Date().toLocaleTimeString();
-    let logLine = `[${timestamp}] ${msg.type}`;
     
-    if (msg.type === 'visual_signal') {
-        logLine += `: ${msg.data.description}`;
-        // Flash camera?
-    } else if (msg.type === 'line_status') {
-         // Update line health
+    // FILTER: Skip noisy messages from the log stream
+    const NOISY_TYPES = ['line_status', 'simulation_tick'];
+    
+    if (msg.type === 'line_status') {
+         // Update line health silently (no log)
          const { layout } = get();
          if (layout) {
              const updatedLines = layout.lines.map((l: Line) => {
@@ -89,9 +87,23 @@ function handleIncomingMessage(set: any, get: any, msg: any) {
              });
              set({ layout: { ...layout, lines: updatedLines } });
          }
+         return; // Don't add to logs
+    }
+    
+    if (msg.type === 'simulation_tick') {
+        return; // Skip tick messages entirely
+    }
+    
+    // Build log line for interesting messages
+    let logLine = `[${timestamp}] ${msg.type}`;
+    
+    if (msg.data?.description) {
+        logLine += `: ${msg.data.description}`;
+    } else if (msg.data?.source) {
+        logLine += ` from ${msg.data.source}`;
     }
     
     set((state: any) => ({
-        logs: [logLine, ...state.logs].slice(0, 50) // Keep last 50
+        logs: [logLine, ...state.logs].slice(0, 30) // Keep last 30
     }));
 }

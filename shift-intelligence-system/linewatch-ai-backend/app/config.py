@@ -40,7 +40,18 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> List[str]:
         """Allowed CORS origins for frontend."""
-        return [self.frontend_url, "http://localhost:3000"]
+        return [
+            self.frontend_url, 
+            "http://localhost:3000",
+            "http://localhost:5173",
+            "http://localhost:5174",
+            "http://localhost:5175",
+            "http://localhost:5176",
+            "http://localhost:5177",
+            "http://localhost:5178",
+            "http://localhost:5179",
+            "http://localhost:5180",
+        ]
 
 
 # Global settings instance
