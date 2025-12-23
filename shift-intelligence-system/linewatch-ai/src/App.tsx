@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useStore } from './store/useStore';
 import FloorMap from './components/FloorMap';
-import SidebarFeed from './components/SidebarFeed';
-import HierarchicalAgentGraph from './components/HierarchicalAgentGraph';
-import { FaPlay, FaStop, FaBolt, FaNetworkWired } from 'react-icons/fa';
+import SharedHypothesisGraph from './components/SharedHypothesisGraph';
+import AgentActivityLog from './components/AgentActivityLog';
+import { FaPlay, FaStop, FaBolt, FaNetworkWired, FaIndustry } from 'react-icons/fa';
 import clsx from 'clsx';
 import { api } from './services/api';
 
@@ -14,7 +14,6 @@ function App() {
   useEffect(() => {
     connectWebSocket();
     
-    // Poll status occasionally
     const interval = setInterval(async () => {
         try {
             const status = await api.simulation.getStatus();
@@ -26,106 +25,114 @@ function App() {
   }, []);
 
   return (
-    <div className="h-screen w-screen bg-stone-100 flex flex-col text-stone-800 font-sans">
+    <div className="h-screen w-screen bg-stone-950 flex flex-col text-stone-200 font-sans overflow-hidden">
       {/* HEADER */}
-      <header className="h-14 bg-white border-b border-stone-200 flex items-center justify-between px-4 shadow-sm z-10">
+      <header className="h-12 bg-stone-900 border-b border-stone-800 flex items-center justify-between px-4 shrink-0">
         <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded bg-primary-500 flex items-center justify-center text-white">
-                <FaNetworkWired />
+            <div className="w-8 h-8 rounded bg-amber-600 flex items-center justify-center text-white">
+                <FaIndustry />
             </div>
             <div>
-                <h1 className="font-bold text-lg leading-tight tracking-tight text-stone-900">LINEWATCH AI</h1>
-                <p className="text-[10px] text-stone-400 font-mono tracking-wider">GEN-3 • EPISTEMIC • V1.0</p>
+                <h1 className="font-bold text-base leading-tight tracking-tight text-stone-100">LINEWATCH AI</h1>
+                <p className="text-[9px] text-stone-500 font-mono tracking-wider">EPISTEMIC REASONING • GEN-3</p>
             </div>
             
-            <div className="h-6 w-px bg-stone-200 mx-2" />
+            <div className="h-6 w-px bg-stone-700 mx-3" />
             
-            <Badge 
-                label={isConnected ? "NEURAL LINK ACTIVE" : "OFFLINE"} 
+            <StatusBadge 
+                label={isConnected ? "CONNECTED" : "OFFLINE"} 
                 type={isConnected ? "success" : "error"} 
             />
-             <Badge 
-                label={simStatus?.running ? `SIMULATION ACTIVE (${simStatus.uptime}m)` : "SIMULATION PAUSED"} 
+            <StatusBadge 
+                label={simStatus?.running ? `ACTIVE ${simStatus.uptime}m` : "PAUSED"} 
                 type={simStatus?.running ? "success" : "warning"} 
             />
         </div>
 
         <div className="flex items-center gap-2">
-            <Button 
+            <ActionButton 
                 onClick={() => api.simulation.injectEvent("fire")}
                 icon={<FaBolt />} 
                 label="INJECT FAULT" 
                 variant="danger"
             />
-             <div className="h-6 w-px bg-stone-200 mx-2" />
-            <Button 
+            <ActionButton 
                 onClick={toggleSimulation}
                 icon={simStatus?.running ? <FaStop /> : <FaPlay />} 
-                label={simStatus?.running ? "STOP SIM" : "START SIM"} 
+                label={simStatus?.running ? "STOP" : "START"} 
                 variant="primary" 
             />
         </div>
       </header>
 
-      {/* MAIN CONTENT GRID */}
-      <main className="flex-1 p-4 grid grid-cols-12 gap-4 overflow-hidden">
+      {/* MAIN GRID: Top Row = Floor + Graph, Bottom Row = Activity Log */}
+      <main className="flex-1 flex flex-col p-3 gap-3 min-h-0">
         
-        {/* LEFT: 2D FLOOR MAP (8 Cols) */}
-        <div className="col-span-8 flex flex-col gap-2">
-            <div className="bg-white rounded-md border border-stone-200 p-2 shadow-sm flex items-center justify-between">
-                 <h2 className="font-bold text-stone-700 text-sm pl-2">PRODUCTION FLOOR: ALPHA</h2>
+        {/* TOP ROW: Floor Map + Reasoning Graph */}
+        <div className="flex gap-3 h-[55%] min-h-[300px]">
+          
+          {/* FLOOR MAP */}
+          <div className="flex-1 flex flex-col min-w-0">
+            <div className="bg-stone-900 border border-stone-800 rounded-t-md px-3 py-1.5 flex items-center gap-2">
+                <FaIndustry className="text-amber-500 text-xs" />
+                <h2 className="font-semibold text-stone-300 text-xs tracking-wide">PRODUCTION FLOOR</h2>
             </div>
-            <div className="flex-1 rounded-md overflow-hidden bg-white shadow-sm border border-stone-200 relative">
+            <div className="flex-1 rounded-b-md overflow-hidden bg-stone-900 border-x border-b border-stone-800">
                 <FloorMap />
             </div>
+          </div>
+
+          {/* REASONING GRAPH */}
+          <div className="w-[40%] min-w-[400px] flex flex-col">
+            <div className="bg-stone-900 border border-stone-800 rounded-t-md px-3 py-1.5 flex items-center gap-2">
+                <FaNetworkWired className="text-amber-500 text-xs" />
+                <h2 className="font-semibold text-stone-300 text-xs tracking-wide">AGENT REASONING FLOW</h2>
+            </div>
+            <div className="flex-1 rounded-b-md overflow-hidden bg-stone-950 border-x border-b border-stone-800">
+                <SharedHypothesisGraph />
+            </div>
+          </div>
         </div>
 
-        {/* RIGHT: INTELLIGENCE SIDEBAR (4 Cols) */}
-        <div className="col-span-4 flex flex-col gap-4">
-            {/* HYPOTHESIS MARKET VISUALIZATION */}
-            <div className="h-1/3 bg-stone-900 rounded-md border border-stone-700 shadow-sm p-1 flex flex-col overflow-hidden">
-                <h2 className="font-bold text-stone-300 text-xs p-2 flex items-center gap-2">
-                    <FaNetworkWired className="text-primary-500"/> MULTI-AGENT REASONING
-                </h2>
-                <div className="flex-1">
-                    <HierarchicalAgentGraph />
-                </div>
-            </div>
-            
-            {/* NEURAL STREAM */}
-            <div className="flex-1 min-h-0">
-                <SidebarFeed />
-            </div>
+        {/* BOTTOM ROW: Activity Log */}
+        <div className="flex-1 min-h-[200px]">
+            <AgentActivityLog />
         </div>
-
       </main>
     </div>
   );
 }
 
-// Subcomponents for styling uniformity
-const Badge = ({ label, type }: { label: string, type: 'success'|'warning'|'error' }) => {
+// Enterprise-style status badge
+const StatusBadge = ({ label, type }: { label: string, type: 'success'|'warning'|'error' }) => {
     return (
         <span className={clsx(
-            "text-[10px] font-bold px-2 py-0.5 rounded border",
-            type === 'success' && "bg-emerald-50 text-emerald-700 border-emerald-200",
-            type === 'warning' && "bg-amber-50 text-amber-700 border-amber-200",
-            type === 'error' && "bg-red-50 text-red-700 border-red-200",
+            "text-[10px] font-bold px-2 py-0.5 rounded flex items-center gap-1",
+            type === 'success' && "bg-emerald-950 text-emerald-400 border border-emerald-800",
+            type === 'warning' && "bg-amber-950 text-amber-400 border border-amber-800",
+            type === 'error' && "bg-red-950 text-red-400 border border-red-800",
         )}>
+            <span className={clsx(
+                "w-1.5 h-1.5 rounded-full",
+                type === 'success' && "bg-emerald-400",
+                type === 'warning' && "bg-amber-400",
+                type === 'error' && "bg-red-400",
+            )} />
             {label}
         </span>
     );
 };
 
-const Button = ({ label, icon, onClick, variant = 'default' }: any) => {
+// Action button component
+const ActionButton = ({ label, icon, onClick, variant = 'default' }: any) => {
     return (
         <button 
             onClick={onClick}
             className={clsx(
-                "flex items-center gap-2 px-3 py-1.5 rounded text-xs font-semibold transition-all shadow-sm active:scale-95",
-                variant === 'primary' && "bg-primary-500 text-white hover:bg-primary-600",
-                variant === 'danger' && "bg-background text-red-600 border border-red-200 hover:bg-red-50",
-                variant === 'default' && "bg-white text-stone-600 border border-stone-200 hover:bg-stone-50",
+                "flex items-center gap-1.5 px-3 py-1 rounded text-xs font-semibold transition-all active:scale-95",
+                variant === 'primary' && "bg-amber-600 text-white hover:bg-amber-500",
+                variant === 'danger' && "bg-transparent text-red-400 border border-red-800 hover:bg-red-950",
+                variant === 'default' && "bg-stone-800 text-stone-300 border border-stone-700 hover:bg-stone-700",
             )}
         >
             {icon} {label}
