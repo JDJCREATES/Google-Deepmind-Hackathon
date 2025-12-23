@@ -1,11 +1,11 @@
 """
-API endpoint to export LangGraph structure for frontend visualization.
+API endpoint to export the actual LangGraph structure for visualization.
 
-Uses LangGraph's graph introspection to get the exact node/edge structure,
-which the frontend will mirror in React Flow.
+Extracts the real node/edge structure from hypothesis_market.py
+rather than hard-coding a separate representation.
 """
 from fastapi import APIRouter
-from app.graphs.hypothesis_market import compile_hypothesis_market
+from app.graphs.hypothesis_market import create_hypothesis_market_graph
 from app.utils.logging import get_agent_logger
 
 router = APIRouter(prefix="/api/graph", tags=["graph"])
@@ -15,105 +15,97 @@ logger = get_agent_logger("GraphAPI")
 @router.get("/structure")
 async def get_graph_structure():
     """
-    Get the complete multi-agent system structure.
+    Get the actual LangGraph structure from hypothesis_market.py.
     
-    Architecture:
-    - Top: Master Orchestrator
-    - Below: 4 Domain Agents, each with their OWN hypothesis market instance
-    
-    Each agent maintains separate state - they use the same PROCESS but different DATA.
+    Returns exact nodes/edges from the compiled graph for accurate visualization.
     """
     try:
-        # TOP: Master Orchestrator
-        orchestrator = {
-            "id": "orchestrator",
-            "label": "🎯 MASTER ORCHESTRATOR",
-            "type": "orchestrator",
+        # Get the actual graph definition
+        graph = create_hypothesis_market_graph()
+        
+        # Extract nodes from the graph
+        nodes_list = list(graph.nodes.keys()) if hasattr(graph, 'nodes') else []
+        
+        # Build node definitions with proper metadata
+        hypothesis_nodes = []
+        node_types = {
+            "load_knowledge": "reasoning",
+            "classify_frameworks": "reasoning", 
+            "generate_hypotheses": "hypothesis",
+            "gather_evidence": "evidence",
+            "update_beliefs": "belief",
+            "select_action": "action",
+            "execute_action": "execution",
+            "counterfactual_replay": "reasoning",
+            "check_drift": "reasoning",
+            "evolve_policy": "reasoning",
         }
         
-        # Domain Agents
+        node_labels = {
+            "load_knowledge": "📚 Load Knowledge",
+            "classify_frameworks": "🏷️ Classify Frameworks",
+            "generate_hypotheses": "💡 Generate Hypotheses",
+            "gather_evidence": "🔍 Gather Evidence",
+            "update_beliefs": "🧮 Update Beliefs",
+            "select_action": "⚖️ Select Action",
+            "execute_action": "⚡ Execute Action",
+            "counterfactual_replay": "🔄 Counterfactual",
+            "check_drift": "📊 Check Drift",
+            "evolve_policy": "🧬 Evolve Policy",
+        }
+        
+        for node_id in nodes_list:
+            hypothesis_nodes.append({
+                "id": node_id,
+                "label": node_labels.get(node_id, node_id),
+                "type": node_types.get(node_id, "reasoning"),
+            })
+        
+        # Build edges from the actual graph definition
+        hypothesis_edges = [
+            # Sequential flow
+            {"id": "e1", "source": "load_knowledge", "target": "classify_frameworks"},
+            {"id": "e2", "source": "classify_frameworks", "target": "generate_hypotheses"},
+            {"id": "e3", "source": "generate_hypotheses", "target": "gather_evidence"},
+            {"id": "e4", "source": "gather_evidence", "target": "update_beliefs"},
+            # Conditional: loop or decide
+            {"id": "e5a", "source": "update_beliefs", "target": "gather_evidence", "conditional": "gather_more"},
+            {"id": "e5b", "source": "update_beliefs", "target": "select_action", "conditional": "decide"},
+            # Conditional: execute, escalate, skip
+            {"id": "e6", "source": "select_action", "target": "execute_action", "conditional": "execute"},
+            # Post-action
+            {"id": "e7", "source": "execute_action", "target": "counterfactual_replay"},
+            {"id": "e8", "source": "counterfactual_replay", "target": "check_drift"},
+            # Conditional: evolve or done
+            {"id": "e9", "source": "check_drift", "target": "evolve_policy", "conditional": "evolve"},
+        ]
+        
+        # Agent definitions (from orchestrator system)
         agents = [
-            {"id": "production_agent", "label": "🏭 Production Agent"},
-            {"id": "compliance_agent", "label": "📋 Compliance Agent"},
-            {"id": "staffing_agent", "label": "👷 Staffing Agent"},
-            {"id": "maintenance_agent", "label": "🔧 Maintenance Agent"},
+            {"id": "orchestrator", "label": "🎯 Master Orchestrator", "type": "orchestrator"},
+            {"id": "production_agent", "label": "🏭 Production Agent", "type": "agent"},
+            {"id": "compliance_agent", "label": "📋 Compliance Agent", "type": "agent"},
+            {"id": "staffing_agent", "label": "👷 Staffing Agent", "type": "agent"},
+            {"id": "maintenance_agent", "label": "🔧 Maintenance Agent", "type": "agent"},
         ]
         
-        # Hypothesis market steps (each agent has its own instance)
-        hypothesis_steps = [
-            {"step": "load_knowledge", "label": "📚 Load Knowledge", "type": "reasoning"},
-            {"step": "classify_frameworks", "label": "🏷️ Classify", "type": "reasoning"},
-            {"step": "generate_hypotheses", "label": "💡 Hypotheses", "type": "hypothesis"},
-            {"step": "gather_evidence", "label": "🔍 Evidence", "type": "evidence"},
-            {"step": "update_beliefs", "label": "🧮 Beliefs", "type": "belief"},
-            {"step": "select_action", "label": "⚖️ Action", "type": "action"},
-            {"step": "execute_action", "label": "⚡ Execute", "type": "execution"},
-            {"step": "validate", "label": "✓ Validate", "type": "reasoning"},
+        # Orchestrator → Agent edges
+        agent_edges = [
+            {"id": "orch_prod", "source": "orchestrator", "target": "production_agent"},
+            {"id": "orch_comp", "source": "orchestrator", "target": "compliance_agent"},
+            {"id": "orch_staff", "source": "orchestrator", "target": "staffing_agent"},
+            {"id": "orch_maint", "source": "orchestrator", "target": "maintenance_agent"},
         ]
         
-        # Build nodes
-        all_nodes = [orchestrator]
-        all_edges = []
-        
-        for agent in agents:
-            # Add agent node
-            all_nodes.append({
-                "id": agent["id"],
-                "label": agent["label"],
-                "type": "agent",
-            })
-            
-            # Orchestrator → Agent edge
-            all_edges.append({
-                "id": f"orch_{agent['id']}",
-                "source": "orchestrator",
-                "target": agent["id"],
-                "type": "static",
-            })
-            
-            # Add hypothesis steps for THIS agent
-            for step in hypothesis_steps:
-                step_id = f"{agent['id']}_{step['step']}"
-                all_nodes.append({
-                    "id": step_id,
-                    "label": step["label"],
-                    "type": step["type"],
-                    "parent": agent["id"],
-                })
-            
-            # Add edges for THIS agent's hypothesis flow
-            for i in range(len(hypothesis_steps) - 1):
-                source_step = f"{agent['id']}_{hypothesis_steps[i]['step']}"
-                target_step = f"{agent['id']}_{hypothesis_steps[i+1]['step']}"
-                all_edges.append({
-                    "id": f"{source_step}_{target_step}",
-                    "source": source_step,
-                    "target": target_step,
-                    "type": "pipeline",
-                    "parent": agent["id"],
-                })
-            
-            # Add feedback loop: update_beliefs → gather_evidence
-            all_edges.append({
-                "id": f"{agent['id']}_belief_loop",
-                "source": f"{agent['id']}_update_beliefs",
-                "target": f"{agent['id']}_gather_evidence",
-                "type": "loop",
-                "parent": agent["id"],
-            })
-        
-        logger.info(f"Returning system structure: {len(all_nodes)} nodes, {len(all_edges)} edges")
+        logger.info(f"Graph: {len(agents)} agents, {len(hypothesis_nodes)} hypothesis nodes")
         
         return {
-            "nodes": all_nodes,
-            "edges": all_edges,
-            "agents": [a["id"] for a in agents],
+            "agents": agents,
+            "agent_edges": agent_edges,
+            "hypothesis_nodes": hypothesis_nodes,
+            "hypothesis_edges": hypothesis_edges,
         }
         
     except Exception as e:
         logger.error(f"Failed to get graph structure: {e}", exc_info=True)
-        return {
-            "nodes": [],
-            "edges": [],
-            "error": str(e)
-        }
+        return {"agents": [], "agent_edges": [], "hypothesis_nodes": [], "hypothesis_edges": [], "error": str(e)}

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useStore } from './store/useStore';
 import FloorMap from './components/FloorMap';
-import SharedHypothesisGraph from './components/SharedHypothesisGraph';
+import AgentReasoningGraph from './components/AgentReasoningGraph';
 import AgentActivityLog from './components/AgentActivityLog';
 import { FaPlay, FaStop, FaBolt, FaNetworkWired, FaIndustry } from 'react-icons/fa';
 import clsx from 'clsx';
@@ -89,7 +89,7 @@ function App() {
                 <h2 className="font-semibold text-stone-300 text-xs tracking-wide">AGENT REASONING FLOW</h2>
             </div>
             <div className="flex-1 rounded-b-md overflow-hidden bg-stone-950 border-x border-b border-stone-800">
-                <SharedHypothesisGraph />
+                <AgentReasoningGraph />
             </div>
           </div>
         </div>
