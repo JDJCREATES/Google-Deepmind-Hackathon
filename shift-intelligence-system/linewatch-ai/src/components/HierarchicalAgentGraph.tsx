@@ -106,7 +106,7 @@ const HierarchicalAgentGraph: React.FC = () => {
     const [agentTokens, setAgentTokens] = useState<Record<string, {input: number, output: number}>>({});
     const [currentActiveAgent, setCurrentActiveAgent] = useState<string | null>(null);
     const activeAgentTimeoutRef = useRef<number | null>(null);
-    const { logs } = useStore();
+    const { logs, thoughtSignatures } = useStore();
 
     // Extract agent-specific logs for thought streams
     const agentThoughts = useMemo(() => {
@@ -256,6 +256,7 @@ const HierarchicalAgentGraph: React.FC = () => {
                     isActive: activeAgent === 'orchestrator',
                     inputTokens: agentTokens.orchestrator?.input || 0,
                     outputTokens: agentTokens.orchestrator?.output || 0,
+                    thoughtSignatures: thoughtSignatures.orchestrator || 0,
                 },
             },
             {
@@ -271,6 +272,7 @@ const HierarchicalAgentGraph: React.FC = () => {
                     isActive: activeAgent === 'production',
                     inputTokens: agentTokens.production?.input || 0,
                     outputTokens: agentTokens.production?.output || 0,
+                    thoughtSignatures: thoughtSignatures.production || 0,
                 },
             },
             {
@@ -286,6 +288,7 @@ const HierarchicalAgentGraph: React.FC = () => {
                     isActive: activeAgent === 'compliance',
                     inputTokens: agentTokens.compliance?.input || 0,
                     outputTokens: agentTokens.compliance?.output || 0,
+                    thoughtSignatures: thoughtSignatures.compliance || 0,
                 },
             },
             {
@@ -301,6 +304,7 @@ const HierarchicalAgentGraph: React.FC = () => {
                     isActive: activeAgent === 'staffing',
                     inputTokens: agentTokens.staffing?.input || 0,
                     outputTokens: agentTokens.staffing?.output || 0,
+                    thoughtSignatures: thoughtSignatures.staffing || 0,
                 },
             },
             {
@@ -316,6 +320,7 @@ const HierarchicalAgentGraph: React.FC = () => {
                     isActive: activeAgent === 'maintenance',
                     inputTokens: agentTokens.maintenance?.input || 0,
                     outputTokens: agentTokens.maintenance?.output || 0,
+                    thoughtSignatures: thoughtSignatures.maintenance || 0,
                 },
             },
         ];
@@ -364,7 +369,7 @@ const HierarchicalAgentGraph: React.FC = () => {
 
         // Combine all nodes
         setNodes([...agentNodes, ...thoughtBubbleNodes]);
-    }, [agentThoughts, activeAgent, agentTokens, thoughtBubbles]);
+    }, [agentThoughts, activeAgent, agentTokens, thoughtBubbles, thoughtSignatures]);
 
     // Initialize edges (Hub & Spoke from Orchestrator)
     useEffect(() => {

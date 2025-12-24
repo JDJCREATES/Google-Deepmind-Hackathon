@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
 import { Handle, Position } from 'reactflow';
-import { FaCog, FaUserShield, FaUsers, FaWrench, FaIndustry, FaBrain } from 'react-icons/fa';
+import { FaCog, FaUserShield, FaUsers, FaWrench, FaIndustry, FaBrain, FaLink } from 'react-icons/fa';
 
 interface RichAgentNodeProps {
     data: {
@@ -13,6 +13,7 @@ interface RichAgentNodeProps {
         isActive?: boolean;
         inputTokens?: number;
         outputTokens?: number;
+        thoughtSignatures?: number;  // Count of reasoning states
     };
 }
 
@@ -184,6 +185,16 @@ const RichAgentNode: React.FC<RichAgentNodeProps> = memo(({ data }) => {
                             </span>
                         </div>
                     </div>
+
+                    {/* Thought Signatures Row */}
+                    {(data.thoughtSignatures !== undefined && data.thoughtSignatures !== null && data.thoughtSignatures > 0) && (
+                        <div className="mt-1 flex items-center justify-center gap-0.5">
+                            <FaLink className="text-purple-400" size={8} />
+                            <span className="text-[10px] font-mono text-purple-300 font-semibold">
+                                {data.thoughtSignatures}
+                            </span>
+                        </div>
+                    )}
 
                     {/* Thought Stream (Last thought) */}
                     {data.thoughts && data.thoughts.length > 0 && (
