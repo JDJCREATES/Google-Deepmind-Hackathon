@@ -614,3 +614,52 @@ Needs: Higher-level coordination or human decision
                 if clean_line:
                     actions.append(clean_line)
         return actions[:10]  # Max 10 actions
+
+    # ========== DYNAMIC VERIFICATION ==========
+
+    async def propose_verification(self, hypothesis: Any) -> Dict[str, Any]:
+        """
+        Propose a tool call to verify a specific hypothesis.
+        
+        Uses Gemini to dynamically select the best tool and arguments
+        to prove/disprove the hypothesis.
+        """
+        from langchain_core.pydantic_v1 import BaseModel, Field
+        
+        class VerificationTool(BaseModel):
+            """Tool call to verify hypothesis."""
+            tool_name: str = Field(description="Name of the tool to call (e.g. check_sensors, inspect_machine)")
+            rationale: str = Field(description="Why this tool will verify the hypothesis")
+            parameters: Dict[str, Any] = Field(description="Parameters for the tool call")
+            
+        system = f"""You are the {self.agent_name}. 
+        Propose a specific tool call to verify this hypothesis: "{hypothesis.description}"
+        
+        Available Tools:
+        - check_sensors(sensor_id, metric)
+        - inspect_machine(machine_id, check_type)
+        - review_camera(camera_id, duration_sec)
+        - query_logs(query_pattern, time_range)
+        - check_schedule(employee_id, shift_date)
+        - verify_compliance(regulation_id, check_point)
+        
+        Select the most relevant tool and providing realistic simulation parameters.
+        """
+        
+        llm = self.llm.with_structured_output(VerificationTool)
+        
+        try:
+            result = await llm.ainvoke(system)
+            return {
+                "tool": result.tool_name,
+                "reasoning": result.rationale,
+                "params": result.parameters
+            }
+        except Exception as e:
+            self.logger.error(f"Failed to propose verification: {e}")
+            # Fallback
+            return {
+                "tool": "generic_check",
+                "reasoning": "Fallback verification",
+                "params": {"target": "general"}
+            }

@@ -255,64 +255,111 @@ async def generate_hypotheses_node(state: HypothesisMarketState) -> Dict[str, An
 
 async def gather_evidence_node(state: HypothesisMarketState) -> Dict[str, Any]:
     """
-    Gather evidence for each hypothesis using agent tools.
+    Gather evidence for each hypothesis using dynamic agent tool proposals.
     
-    Routes to appropriate tools based on hypothesis framework
-    and target agent.
+    Instead of hardcoded checks, this asks the relevant agent: 
+    "How would you verify this?" and then simulates the tool execution.
     """
-    logger.info("🔍 Gathering evidence")
+    logger.info("🔍 Gathering evidence via dynamic agent tooling")
+    
+    # Import agents (lazy import to avoid circular dep)
+    from app.agents.production.production_agent import ProductionAgent
+    from app.agents.staffing.staffing_agent import StaffingAgent
+    from app.agents.compliance.compliance_agent import ComplianceAgent
+    from app.agents.maintenance.maintenance_agent import MaintenanceAgent
+    from app.agents.orchestrator.orchestrator import MasterOrchestrator
+    
+    # Agent map
+    agent_map = {
+        "ProductionAgent": ProductionAgent(),
+        "ComplianceAgent": ComplianceAgent(),
+        "MaintenanceAgent": MaintenanceAgent(),
+        "StaffingAgent": StaffingAgent(),
+        "MasterOrchestrator": MasterOrchestrator(),
+    }
     
     hypotheses = state.get("hypotheses", [])
     evidence_list = []
     
-    # For each hypothesis, gather relevant evidence
-    for hypothesis in hypotheses:
-        # Determine evidence source based on framework
-        if hypothesis.framework == HypothesisFramework.RCA:
-            # Get production metrics, equipment health
-            evidence = Evidence(
-                source="ProductionMetrics",
-                data={"simulated": True, "health": 75, "efficiency": 0.82},
-                supports=True,
-                strength=0.7,
-                gathered_by="ProductionAgent",
-            )
-            evidence_list.append(evidence)
+    # Simulate tool execution (Mock Engine)
+    def simulate_tool_output(tool_name: str, params: Dict, hypothesis_desc: str) -> Dict[str, Any]:
+        """Simulate realistic tool output based on the tool and hypothesis context."""
+        import random
+        
+        # Is this likely true? Bias towards the first hypothesis being true for simulation
+        is_supported = "smoke" in hypothesis_desc.lower() or "fire" in hypothesis_desc.lower() or random.random() > 0.6
+        strength = 0.8 + (random.random() * 0.15) if is_supported else 0.2
+        
+        if "check_sensors" in tool_name:
+            return {
+                "reading": 85.4 if is_supported else 24.1, 
+                "threshold": 50.0, 
+                "status": "CRITICAL" if is_supported else "NORMAL",
+                "supports": is_supported
+            }
+        elif "camera" in tool_name:
+            return {
+                "visual_anomaly_detected": is_supported,
+                "confidence": 0.92,
+                "description": "Visible smoke plume" if is_supported else "Clear view",
+                "supports": is_supported
+            }
+        elif "logs" in tool_name:
+            return {
+                "events_found": 12 if is_supported else 0,
+                "pattern_match": is_supported,
+                "supports": is_supported
+            }
             
-        elif hypothesis.framework == HypothesisFramework.HACCP:
-            # Get temperature readings
-            evidence = Evidence(
-                source="TemperatureSensor",
-                data={"temperature": 3.5, "compliant": True},
-                supports=False,  # No violation
-                strength=0.9,
-                gathered_by="ComplianceAgent",
-            )
-            evidence_list.append(evidence)
-            
-        elif hypothesis.framework == HypothesisFramework.TOC:
-            # Get throughput data
-            evidence = Evidence(
-                source="ThroughputAnalysis",
-                data={"bottleneck_line": 7, "impact": 15},
-                supports=True,
-                strength=0.8,
-                gathered_by="ProductionAgent",
-            )
-            evidence_list.append(evidence)
+        return {"result": f"Simulated check for {tool_name}", "supports": is_supported}
 
-        elif hypothesis.framework == HypothesisFramework.FMEA:
-            # Get safety sensor / camera data
-            evidence = Evidence(
-                source="SafetySensors",
-                data={"smoke_detected": True, "zone": "ConveyorMotor", "confidence": 0.95},
-                supports=True,
-                strength=0.9,
-                gathered_by="ComplianceAgent",
-            )
-            evidence_list.append(evidence)
     
-    logger.info(f"✅ Gathered {len(evidence_list)} pieces of evidence")
+    # For each hypothesis, ask the proposing agent how to verify it
+    for hypothesis in hypotheses:
+        # Determine responsible agent
+        agent_name = hypothesis.proposed_by or "ProductionAgent"
+        agent = agent_map.get(agent_name, agent_map["ProductionAgent"])
+        
+        # 1. Ask agent to propose verification
+        logger.info(f"🤔 Asking {agent_name} to verify: {hypothesis.hypothesis_id}")
+        verification_plan = await agent.propose_verification(hypothesis)
+        
+        tool_name = verification_plan.get("tool", "manual_check")
+        rationale = verification_plan.get("reasoning", "Standard verification")
+        params = verification_plan.get("params", {})
+        
+        # 2. "Execute" the tool (Simulated)
+        sim_result = simulate_tool_output(tool_name, params, hypothesis.description)
+        
+        # 3. Create Evidence object
+        evidence = Evidence(
+            source=f"{tool_name}",
+            data={
+                "tool": tool_name,
+                "params": params,
+                "raw_output": sim_result
+            },
+            supports=sim_result["supports"],
+            strength=0.85 if sim_result["supports"] else 0.4,
+            gathered_by=agent_name,
+            description=f"Tool '{tool_name}' returned: {sim_result.get('status', 'Done')}"
+        )
+        evidence_list.append(evidence)
+        
+        # Broadcast tool usage for frontend
+        from app.services.websocket import manager
+        await manager.broadcast({
+            "type": "tool_execution",
+            "data": {
+                "agent": agent_name,
+                "tool": tool_name,
+                "rationale": rationale,
+                "result": sim_result,
+                "timestamp": datetime.now().isoformat()
+            }
+        })
+    
+    logger.info(f"✅ Gathered {len(evidence_list)} pieces of dynamic evidence")
     
     return {"evidence": evidence_list}
 
@@ -415,22 +462,24 @@ async def select_action_node(state: HypothesisMarketState) -> Dict[str, Any]:
     if not leading:
         return {"selected_action": None}
     
-    # Record framework usage for drift detection
-    drift_detector.record_usage(leading.framework)
+    # Invoke Master Orchestrator as Final Judge
+    from app.agents.orchestrator.orchestrator import MasterOrchestrator
+    orchestrator = MasterOrchestrator()
     
-    # Check if we need human escalation
-    policy = DecisionPolicy.create_initial()
-    if policy.should_escalate(belief_state.confidence_in_leader):
-        logger.warning("⚠️ Confidence too low - needs human escalation")
+    logger.info("⚖️ Invoking Master Orchestrator for final judgment")
+    verdict = await orchestrator.make_final_decision(belief_state)
+    
+    action = verdict.get("selected_action")
+    reasoning = verdict.get("reasoning")
+    
+    logger.info(f"👨‍⚖️ Orchestrator Verdict: {action} ({reasoning[:50]}...)")
+    
+    # Check if we need human escalation based on Orchestrator's verdict
+    if action == "ESCALATE_TO_HUMAN":
         return {
             "needs_human": True,
             "selected_action": "ESCALATE_TO_HUMAN",
         }
-    
-    # Select action based on leading hypothesis
-    action = leading.recommended_action or f"Act on {leading.description}"
-    
-    logger.info(f"✅ Selected action: {action}")
     
     return {
         "selected_action": action,

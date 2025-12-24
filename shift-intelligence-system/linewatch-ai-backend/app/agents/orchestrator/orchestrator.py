@@ -110,6 +110,61 @@ class MasterOrchestrator(BaseAgent):
             
         return hypotheses
 
+    async def make_final_decision(self, belief_state: Any) -> Dict[str, Any]:
+        """
+        Act as the final Judge and Jury on the belief state.
+        
+        Reviews all evidence and the leading hypothesis to make a binding decision.
+        Can override the mathematical leader if reasoning dictates.
+        """
+        self.logger.info("⚖️ Master Orchestrator deliberating on final decision...")
+        
+        leading = belief_state.get_leading_hypothesis()
+        confidence = belief_state.confidence_in_leader
+        evidence_summary = "\n".join([f"- {e.description} ({'Supports' if e.supports else 'Refutes'})" for e in getattr(belief_state, 'hypotheses', [])])
+        
+        prompt = f"""
+        You are the Master Orchestrator and Final Judge.
+        
+        SITUATION: {belief_state.signal_description}
+        
+        LEADING HYPOTHESIS (Math confidence: {confidence:.2f}):
+        {leading.description if leading else "None"}
+        
+        EVIDENCE REVIEW:
+        {evidence_summary}
+        
+        DECISION TASK:
+        1. Review the evidence critically.
+        2. Decide if the leading hypothesis is truly proven.
+        3. Select the best course of action (can be different from hypothesis recommendation).
+        4. If confidence is too low (<0.7), mandate "GATHER MORE EVIDENCE" or "ESCALATE TO HUMAN".
+        
+        Output your binding verdict and reasoning.
+        """
+        
+        # Use simple invoke for now, returning dict
+        try:
+            result = await self.agent.ainvoke({"messages": [{"role": "user", "content": prompt}]})
+            # Parse finding
+            content = result["messages"][-1].content
+            
+            # Simple heuristic parsing for action
+            action = "ESCALATE_TO_HUMAN"
+            if "GATHER MORE" in content.upper():
+                action = "GATHER_MORE_EVIDENCE"
+            elif leading and leading.recommended_action:
+                action = leading.recommended_action
+            
+            return {
+                "selected_action": action,
+                "reasoning": content[:200] + "...",
+                "override": False
+            }
+        except Exception as e:
+            self.logger.error(f"Decision failed: {e}")
+            return {"selected_action": "ESCALATE_TO_HUMAN", "reasoning": "Decision failure"}
+
     async def _execute_action(self, action: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """Execute orchestrator actions."""
         action_lower = action.lower()

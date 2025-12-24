@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useStore } from './store/useStore';
 import FloorMap from './components/FloorMap';
-import AgentReasoningGraph from './components/AgentReasoningGraph';
+import HierarchicalAgentGraph from './components/HierarchicalAgentGraph';
 import AgentActivityLog from './components/AgentActivityLog';
 import { FaPlay, FaStop, FaBolt, FaNetworkWired, FaIndustry } from 'react-icons/fa';
 import clsx from 'clsx';
@@ -91,7 +91,7 @@ function App() {
 
         {/* BOTTOM ROW: Agent Reasoning Graph */}
         <div className="h-[400px] shrink-0 overflow-hidden bg-stone-950 border border-stone-800 rounded-md">
-            <AgentReasoningGraph />
+            <HierarchicalAgentGraph />
         </div>
       </main>
     </div>
