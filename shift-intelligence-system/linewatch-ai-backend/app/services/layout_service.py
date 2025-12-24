@@ -158,86 +158,91 @@ class LayoutService:
                 "health": 100
             })
         
-        # 5 Cameras (positioned above their line groups)
-        for cam_idx, (cam_id, lines_covered) in enumerate(self.CAMERA_CONFIG.items()):
-            first_x = prod_start_x + (lines_covered[0] - 0.5) * line_spacing
-            last_x = prod_start_x + (lines_covered[-1] - 0.5) * line_spacing
-            cam_x = (first_x + last_x) / 2
-            
-            layout["cameras"].append({
-                "id": cam_id.lower().replace("-", "_"),
-                "label": cam_id,
-                "lines_covered": lines_covered,
-                "x": cam_x,
-                "y": operator_zone_y - 15, # Above operators
-                "rotation": 180,
-                "fov": 50,
-                "range": machine_h + equip_h + 60,
-                "status": "active"
-            })
+        # 5 Cameras (Strategic Surveillance Points - User Request: 4 Corners + 1 Center)
+        # Production Floor Bounds
+        cam_top_y = maintenance_h + 10
+        cam_bot_y = canvas_h - 10 # Absolute bottom edge
+        cam_left_x = prod_start_x + 10
+        cam_right_x = prod_end_x - 10
+        cam_center_x = (prod_start_x + prod_end_x) / 2
         
-        # 5 Operators (in operator zone above machines)
+        # Cam 1: Top-Left (Looking Down-Right)
+        layout["cameras"].append({
+            "id": "cam_01", "label": "CAM-01", "lines_covered": [1,2,3,4],
+            "x": cam_left_x - 50, "y": cam_top_y, "rotation": 315, 
+            "fov": 80, "range": 300, "status": "active"
+        })
+        
+        # Cam 2: Top-Right (Looking Down-Left)
+        layout["cameras"].append({
+            "id": "cam_02", "label": "CAM-02", "lines_covered": [17,18,19,20],
+            "x": cam_right_x + 20, "y": cam_top_y, "rotation": 45, 
+            "fov": 80, "range": 300, "status": "active"
+        })
+        
+        # Cam 3: Bottom-Left (Looking Up-Right)
+        layout["cameras"].append({
+            "id": "cam_03", "label": "CAM-03", "lines_covered": [5,6,7,8],
+            "x": cam_left_x - 50, "y": cam_bot_y, "rotation": 225, 
+            "fov": 80, "range": 300, "status": "active"
+        })
+        
+        # Cam 4: Bottom-Right (Looking Up-Left)
+        layout["cameras"].append({
+            "id": "cam_04", "label": "CAM-04", "lines_covered": [13,14,15,16],
+            "x": cam_right_x + 20, "y": cam_bot_y, "rotation": 135, 
+            "fov": 80, "range": 300, "status": "active"
+        })
+        
+        # Cam 5: Top-Center (Looking Straight Down)
+        layout["cameras"].append({
+            "id": "cam_05", "label": "CAM-05", "lines_covered": [9,10,11,12],
+            "x": cam_center_x, "y": cam_top_y, "rotation": 0, 
+            "fov": 95, "range": 300, "status": "active"
+        })
+        
+        # RESTORED: Operator Generation
         operator_names = ["Alex", "Jordan", "Sam", "Casey", "Riley"]
-        operator_statuses = ["monitoring", "inspecting", "idle", "moving", "monitoring"]
-        for i, name in enumerate(operator_names):
-            x = prod_start_x + (i + 0.5) * (available_width / 5)
+        operator_statuses = ["monitoring", "inspecting", "idle", "idle", "monitoring"]
+        # Spread them out
+        op_spacing = available_width / 6
+        
+        for i, (name, status) in enumerate(zip(operator_names, operator_statuses)):
             layout["operators"].append({
                 "id": f"op_{i+1}",
                 "name": name,
-                "x": x,
+                "x": prod_start_x + (i + 1) * op_spacing,
                 "y": operator_zone_y,
-                "status": operator_statuses[i],
-                "assigned_lines": list(self.CAMERA_CONFIG[f"CAM-0{i+1}"])
+                "status": status,
+                "current_action": "monitoring",
+                "assigned_lines": [] 
             })
         
-        # Conveyor segments
-        # 1. Main conveyor (bottom) - Horizontal
-        # Calculate width to stop exactly at last machine (User Req)
-        main_conv_total_width = last_machine_right_x - (warehouse_w + curve_allowance)
-        
-        segment_count = 5
+        # Conveyor Logic: Flow TOWARDS Warehouse (Right -> Left)
+        # Main Conveyor (Bottom)
+        main_conv_total_width = last_machine_right_x - (warehouse_w + 10)
+        segment_count = 4
         segment_width = main_conv_total_width / segment_count
         
         for i in range(segment_count):
             layout["conveyors"].append({
                 "id": f"main_conv_{i+1}",
-                "x": (warehouse_w + curve_allowance) + i * segment_width,
+                "x": (warehouse_w + 10) + i * segment_width,
                 "y": main_conveyor_y,
                 "width": segment_width,
                 "height": main_conveyor_h,
                 "direction": "horizontal",
+                "flow": "reverse", # Move Right to Left
                 "status": "running"
             })
             
-        # 2. Vertical Connector Curve (Left side) 
-        # Connects main conveyor up to the feeders
-        feeder_spacing = 35 
-        top_feeder_y = main_conveyor_y - (4 * feeder_spacing) 
+        # Entry/Intake Conveyor (From Warehouse to Machines? No, Machines make things.)
+        # Maybe "Raw Material" feed?
+        # User said: "machines making small product boxes that quickly going into larger boxes that then go onto the conveyors off into conveyor"
+        # So Machines -> Main Conveyor -> Warehouse.
         
-        layout["conveyors"].append({
-            "id": "vert_curve_conv",
-            "x": warehouse_w, # Starts at warehouse edge
-            "y": top_feeder_y,
-            "width": curve_allowance + 2, # Connects to start of main conveyor
-            "height": main_conveyor_y + main_conveyor_h - top_feeder_y,
-            "direction": "vertical",
-            "status": "running"
-        })
-        
-        # 3. Warehouse feeder conveyors (Horizontal going INTO vertical curve)
-        for i in range(4):
-            y_pos = main_conveyor_y - ((i + 1) * feeder_spacing)
-            feeder_h = 10 
-            
-            layout["conveyors"].append({
-                "id": f"feeder_{i+1}",
-                "x": 0,
-                "y": y_pos + (main_conveyor_h - feeder_h)/2 + 8, 
-                "width": warehouse_w + 10, # Connect slightly into curve
-                "height": feeder_h,
-                "direction": "horizontal",
-                "status": "running"
-            })
+        # We don't need the weird vertical curve anymore.
+        # Just a clean layout.
             
         return layout
 

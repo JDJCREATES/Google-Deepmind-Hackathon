@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useState, useRef } from 'react';
-import { Stage, Layer, Rect, Text, Group, Circle, RegularPolygon, Line as KonvaLine } from 'react-konva';
+import Konva from 'konva';
+import { Stage, Layer, Rect, Text, Group, Circle, RegularPolygon, Arc } from 'react-konva';
 import { useStore } from '../store/useStore';
 
 // Professional color theme - no purple
@@ -91,7 +92,13 @@ interface ZoneData {
 }
 
 const FloorMap: React.FC = () => {
-    const { layout, fetchLayout } = useStore();
+    const { 
+        layout, 
+        fetchLayout, 
+        activeOperators, 
+        cameraStates, 
+        machineStates 
+    } = useStore();
     const containerRef = useRef<HTMLDivElement>(null);
     const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
 
@@ -159,7 +166,29 @@ const FloorMap: React.FC = () => {
         return <div ref={containerRef} className="w-full h-full bg-stone-950 flex items-center justify-center text-stone-500 text-sm">Loading Floor Plan...</div>;
     }
 
+    // Merge static layout with live state
     const { zones, lines, cameras, operators, conveyors } = layout as any;
+    
+    // Live Data Overrides
+    const liveOperators = operators?.map((op: OperatorData) => ({
+        ...op,
+        ...(activeOperators[op.id] || {})
+    }));
+
+    const liveCameras = cameras?.map((cam: CameraData) => ({
+        ...cam,
+        ...(cameraStates[cam.id] || {})
+    }));
+
+    const liveLines = lines?.map((line: MachineData) => {
+        const state = machineStates[line.id];
+        return {
+            ...line,
+            health: state ? state.health : line.health,
+            // throughput: state ? state.throughput : 0, // could use for particle speed
+        };
+    });
+
     const layoutWidth = layout.dimensions.width;
     const layoutHeight = layout.dimensions.height;
     
@@ -190,23 +219,23 @@ const FloorMap: React.FC = () => {
                         <ZoneComp key={zone.id} zone={zone} pattern={getZonePattern(zone.id)} />
                     ))}
 
-                    {/* Conveyors */}
+                    {/* Conveyors (Bottom Layer) */}
                     {conveyors?.map((conv: ConveyorData) => (
                         <ConveyorComp key={conv.id} conveyor={conv} />
                     ))}
 
                     {/* Machine Stacks (Production Lines) */}
-                    {lines?.map((line: MachineData) => (
+                    {liveLines?.map((line: MachineData) => (
                         <MachineStack key={line.id} machine={line} />
                     ))}
 
-                    {/* Operators */}
-                    {operators?.map((op: OperatorData) => (
+                    {/* Operators (Middle Layer) */}
+                    {liveOperators?.map((op: OperatorData) => (
                         <OperatorComp key={op.id} operator={op} />
                     ))}
 
-                    {/* Cameras */}
-                    {cameras?.map((cam: CameraData) => (
+                    {/* Cameras (Top Layer for cones) */}
+                    {liveCameras?.map((cam: CameraData) => (
                         <CameraComp key={cam.id} camera={cam} />
                     ))}
                 </Layer>
@@ -247,7 +276,6 @@ const ZoneComp: React.FC<{ zone: ZoneData, pattern?: HTMLCanvasElement | null }>
 
 // Machine Stack Component (Machine + Equipment + Connector to Conveyor)
 const MachineStack: React.FC<{ machine: MachineData }> = ({ machine }) => {
-    // ... [existing MachineStack implementation]
     const health = machine.health ?? 100;
     let statusColor = THEME.status.ok;
     if (health < 80) statusColor = THEME.status.warning;
@@ -348,16 +376,45 @@ const MachineStack: React.FC<{ machine: MachineData }> = ({ machine }) => {
     );
 };
 
-// Operator Component
+// Animated Operator Component
 const OperatorComp: React.FC<{ operator: OperatorData }> = ({ operator }) => {
-    // ... [existing OperatorComp implementation]
+    const groupRef = useRef<any>(null);
+    
+    // Tween movement when position changes
+    useEffect(() => {
+        if (!groupRef.current) return;
+        
+        // Kill previous tweens if any
+        groupRef.current.to({
+            x: operator.x,
+            y: operator.y,
+            duration: 4.0, // 4s transition (slightly faster than 5s tick for responsiveness)
+            easing: Konva.Easings.EaseInOut,
+        });
+    }, [operator.x, operator.y]);
+
     let fillColor = THEME.operator.idle;
     if (operator.status === 'monitoring') fillColor = THEME.operator.active;
     if (operator.status === 'moving') fillColor = THEME.operator.moving;
     if (operator.status === 'inspecting') fillColor = '#8B5CF6';
     
+    // Use initial position for first render, then tween takes over
+    // logic: We render at the TARGET position initially if it's the very first mount? 
+    // Actually, storing the "current" pos in state is hard.
+    // Konva handles it: if we change key/prop 'x', React-Konva updates immediately.
+    // To animate, we must NOT bind x/y to props directly after mount, OR use the ref to override.
+    // But React-Konva will try to reset it on re-render.
+    // Solution: Pass initial x/y only? No, just let the tween override.
+    
     return (
-        <Group x={operator.x} y={operator.y}>
+        <Group 
+            ref={groupRef}
+            x={operator.x} // Note: This will jump on update if we don't handle it carefully.
+                           // Actually, simpler: Use a separate "visualPosition" state if we want perfect control.
+                           // But Konva.to() modifies the node instance directly. React-Konva usually respects that until props change.
+                           // Since props CHANGE every 5s, we trigger the tween then.
+            y={operator.y}
+        >
             <Circle radius={14} fill={fillColor} opacity={0.15} />
             <Circle radius={10} fill={fillColor} opacity={0.7} stroke={fillColor} strokeWidth={2} shadowColor={fillColor} shadowBlur={8} shadowOpacity={0.5} />
             <Circle radius={3} fill="#FFF" opacity={0.9} />
@@ -366,12 +423,117 @@ const OperatorComp: React.FC<{ operator: OperatorData }> = ({ operator }) => {
     );
 };
 
+// Product Stream Component for Conveyors
+const ProductStream: React.FC<{ 
+    conv: ConveyorData, 
+    boxColor: string, 
+    size: number 
+}> = ({ conv, boxColor, size }) => {
+    // Determine flow direction and limits
+    const isVertical = conv.direction === 'vertical';
+    const length = isVertical ? conv.height : conv.width;
+    const isReverse = (conv as any).flow === 'reverse'; // Type assertion for custom prop
+    
+    // Create particles
+    const particleCount = Math.floor(length / 40); // 1 box every 40px
+    const particles = Array.from({ length: particleCount }).map((_, i) => i);
+
+    return (
+        <Group x={0} y={0}>
+             {particles.map((i) => (
+                 <ProductBox 
+                    key={i} 
+                    index={i} 
+                    total={particleCount} 
+                    length={length} 
+                    isVertical={isVertical} 
+                    isReverse={isReverse}
+                    color={boxColor} 
+                    size={size}
+                    speed={4000} // Slower speed (4s loop)
+                 />
+             ))}
+        </Group>
+    );
+};
+
+const ProductBox: React.FC<{
+    index: number,
+    total: number,
+    length: number,
+    isVertical: boolean,
+    isReverse: boolean,
+    color: string,
+    size: number,
+    speed: number
+}> = ({ index, total, length, isVertical, isReverse, color, size, speed }) => {
+    const ref = useRef<any>(null);
+
+    useEffect(() => {
+        if (!ref.current) return;
+        
+        // Continuous loop animation
+        const anim = new Konva.Animation((frame) => {
+            if (!frame) return;
+            const time = frame.time + (index * (speed / total));
+            const progress = (time % speed) / speed;
+            
+            // Calculate Position
+            let pos = progress * length;
+            if (isReverse) {
+                pos = length - pos; // Move backwards
+            }
+            
+            if (isVertical) {
+                ref.current.y(pos);
+            } else {
+                ref.current.x(pos);
+            }
+            
+            // Fade in/out at edges
+            let opacity = 1;
+            // Standard fade logic (near 0 and near length)
+            // If reverse, logical start is length.
+            // But progress 0..1 maps to movement.
+            // Edge fading based on progress works regardless of direction
+            if (progress < 0.1) opacity = progress * 10;
+            if (progress > 0.9) opacity = (1 - progress) * 10;
+            ref.current.opacity(opacity);
+            
+        }, ref.current.getLayer());
+        
+        anim.start();
+        return () => {
+            anim.stop();
+        };
+    }, [index, total, length, speed, isVertical, isReverse]);
+
+    return (
+        <Rect
+            ref={ref}
+            x={isVertical ? (30 - size)/2 : 0} 
+            y={isVertical ? 0 : (10 - size)/2}
+            width={size}
+            height={size}
+            fill={color}
+            cornerRadius={1}
+        />
+    );
+}
+
 // Conveyor Component
 const ConveyorComp: React.FC<{ conveyor: ConveyorData }> = ({ conveyor }) => {
     const isRunning = conveyor.status === 'running';
     const statusColor = isRunning ? THEME.conveyor.running : THEME.conveyor.stopped;
     const isVertical = conveyor.direction === 'vertical';
     
+    // Distinguish Main vs Feeder
+    const isMain = conveyor.id.includes('main');
+    
+    // Box style
+    const boxSize = isMain ? 12 : 6;
+    const boxColor = isMain ? '#FCD34D' : '#94A3B8'; // Gold (Packed) vs Slate (Raw)
+
     return (
         <Group x={conveyor.x} y={conveyor.y}>
             {/* Belt background */}
@@ -382,31 +544,14 @@ const ConveyorComp: React.FC<{ conveyor: ConveyorData }> = ({ conveyor }) => {
                 cornerRadius={2}
             />
             
-            {/* Belt stripes (motion indicator) */}
-            {isRunning && !isVertical && Array.from({ length: Math.floor(conveyor.width / 20) }).map((_, i) => (
-                <Rect
-                    key={i}
-                    x={i * 20 + 5}
-                    y={conveyor.height / 2 - 1}
-                    width={10}
-                    height={2}
-                    fill="#94A3B8"
-                    opacity={0.5}
+            {/* Product Stream (Only if running) */}
+            {isRunning && (
+                <ProductStream 
+                    conv={conveyor} 
+                    boxColor={boxColor} 
+                    size={boxSize} 
                 />
-            ))}
-            
-            {/* Vertical Belt stripes */}
-            {isRunning && isVertical && Array.from({ length: Math.floor(conveyor.height / 20) }).map((_, i) => (
-                <Rect
-                    key={i}
-                    y={i * 20 + 5}
-                    x={conveyor.width / 2 - 1}
-                    height={10}
-                    width={2}
-                    fill="#94A3B8"
-                    opacity={0.5}
-                />
-            ))}
+            )}
             
             {/* Status indicator line */}
             <Rect
@@ -425,22 +570,43 @@ const ConveyorComp: React.FC<{ conveyor: ConveyorData }> = ({ conveyor }) => {
 const CameraComp: React.FC<{ camera: CameraData }> = ({ camera }) => {
     const isActive = camera.status === 'active';
     
+    // Calculate Cone Points based on FOV and Range
+    // (0,0) is camera tip.
+    // Base rotation 0 points DOWN in this coordinate system for Konva setup? 
+    // Previous code [0,0, -8, 25, 8, 25] implies Y+ is the direction.
+    // So let's calculate angles relative to "DOWN" (90 deg).
+    // Actually, simple math:
+    // Left point X = length * sin(-fov/2)
+    // Left point Y = length * cos(-fov/2)
+    // etc.
+    
+    const range = camera.range || 100;
+    const fov = camera.fov || 60;
+    
+    // Cone visual properties
+    const coneColor = isActive ? THEME.camera.active : THEME.camera.cone;
+
     return (
         <Group x={camera.x} y={camera.y} rotation={camera.rotation}>
             {/* Camera body */}
             <RegularPolygon
                 sides={3}
-                radius={6}
+                radius={8}
                 fill={THEME.camera.body}
                 stroke={isActive ? THEME.camera.active : '#475569'}
                 strokeWidth={1}
+                rotation={180} // Point triangle down relative to group
             />
-            {/* Vision cone */}
-            <KonvaLine
-                points={[0, 0, -8, 25, 8, 25]}
-                closed={true}
-                fill={THEME.camera.cone}
-                opacity={isActive ? 0.15 : 0.05}
+             {/* Vision cone (Single Uniform Arc) */}
+             <Arc
+                innerRadius={0}
+                outerRadius={range}
+                angle={fov}
+                rotation={90 - (fov/2)} // Center the arc downwards
+                fill={coneColor}
+                opacity={isActive ? 0.2 : 0.05}
+                stroke={isActive ? coneColor : 'transparent'}
+                strokeWidth={1}
             />
         </Group>
     );

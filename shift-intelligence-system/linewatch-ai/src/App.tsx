@@ -11,16 +11,25 @@ function App() {
   const { connectWebSocket, isConnected, toggleSimulation } = useStore();
   const [simStatus, setSimStatus] = useState<{running: boolean, uptime: number} | null>(null);
 
+  const handleToggleSimulation = async () => {
+    await toggleSimulation();
+    // Immediate status refresh to update UI state
+    try {
+        const status = await api.simulation.getStatus();
+        setSimStatus({running: status.running, uptime: status.uptime_minutes});
+    } catch(e) {/* ignore */}
+  };
+
   useEffect(() => {
     connectWebSocket();
     
-    // Poll simulation status every 5 seconds (reduced from 2s to minimize log spam)
+    // Poll simulation status every 2 seconds
     const interval = setInterval(async () => {
         try {
             const status = await api.simulation.getStatus();
             setSimStatus({running: status.running, uptime: status.uptime_minutes});
         } catch(e) {/* ignore */}
-    }, 5000);
+    }, 2000);
     
     return () => clearInterval(interval);
   }, []);
@@ -58,7 +67,7 @@ function App() {
                 variant="danger"
             />
             <ActionButton 
-                onClick={toggleSimulation}
+                onClick={handleToggleSimulation}
                 icon={simStatus?.running ? <FaStop /> : <FaPlay />} 
                 label={simStatus?.running ? "STOP" : "START"} 
                 variant="primary" 

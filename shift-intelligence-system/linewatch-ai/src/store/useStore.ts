@@ -21,7 +21,12 @@ interface State {
     socket: WebSocket | null;
     isConnected: boolean;
     logs: LogEntry[];
-    thoughtSignatures: Record<string, number>;  // Per-agent signature counts
+    thoughtSignatures: Record<string, number>;
+    
+    // Map Entity States
+    activeOperators: Record<string, any>;
+    machineStates: Record<string, any>;
+    cameraStates: Record<string, any>;
 
     // Actions
     fetchLayout: () => Promise<void>;
@@ -39,6 +44,9 @@ export const useStore = create<State>((set, get) => ({
     isConnected: false,
     logs: [],
     thoughtSignatures: {},
+    activeOperators: {},
+    machineStates: {},
+    cameraStates: {},
 
     fetchLayout: async () => {
         set({ isLoading: true });
@@ -72,8 +80,35 @@ export const useStore = create<State>((set, get) => ({
             try {
                 const message = JSON.parse(event.data);
                 
+                // Handle Map Updates (Do not log these to activity feed if high frequency)
+                if (message.type === 'operator_update') {
+                    set(state => ({
+                        activeOperators: {
+                            ...state.activeOperators,
+                            [message.data.id]: message.data
+                        }
+                    }));
+                    return;
+                }
+
+                if (message.type === 'camera_detection') {
+                    set(state => ({
+                        cameraStates: {
+                            ...state.cameraStates,
+                            [message.data.camera_id]: message.data
+                        }
+                    }));
+                    return; // Should we log detections? Maybe yes, but handled below if not returned
+                }
+
                 // Skip line_status messages - they're just noise for the Activity Log
                 if (message.type === 'line_status') {
+                     set(state => ({
+                        machineStates: {
+                            ...state.machineStates,
+                            [message.data.line_id]: message.data
+                        }
+                    }));
                     return;
                 }
                 
