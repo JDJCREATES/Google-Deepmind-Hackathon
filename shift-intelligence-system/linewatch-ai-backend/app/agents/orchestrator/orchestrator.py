@@ -158,6 +158,10 @@ class MasterOrchestrator(BaseAgent):
             # Parse finding
             content = result["messages"][-1].content
             
+            # Ensure content is a string
+            if isinstance(content, list):
+                content = str(content)
+            
             # Simple heuristic parsing for action
             action = "ESCALATE_TO_HUMAN"
             if "GATHER MORE" in content.upper():

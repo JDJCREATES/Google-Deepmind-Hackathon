@@ -67,7 +67,7 @@ const RichAgentNode: React.FC<RichAgentNodeProps> = memo(({ data }) => {
             {/* Robot Head Container */}
             <div
                 className="flex flex-col items-center"
-                style={{ minWidth: 140, maxWidth: 200 }}
+                style={{ width: 140 }}
             >
                 {/* Antenna */}
                 <div className="flex flex-col items-center mb-1">
@@ -81,17 +81,20 @@ const RichAgentNode: React.FC<RichAgentNodeProps> = memo(({ data }) => {
                     <div className="w-0.5 h-3 bg-stone-600" />
                 </div>
 
-                {/* Head (Main Body) */}
+                {/* Head/Face */}
                 <div
-                    className="relative rounded-2xl p-3 border-2 transition-all duration-500"
+                    className="rounded-2xl p-3 mb-1 transition-all duration-500"
                     style={{
-                        backgroundColor: '#1C1917',
-                        borderColor: (isActive || isOrchestrator) ? config.color : config.color + '40',
-                        minWidth: 130,
+                        backgroundColor: (isActive || isOrchestrator) ? '#1C1917' : '#0C0A09',
+                        borderWidth: '2px',
+                        borderStyle: 'solid',
+                        borderColor: (isActive || isOrchestrator) ? config.color : '#292524',
+                        boxShadow: (isActive || isOrchestrator) ? `0 0 12px ${config.color}50` : 'none',
+                        width: 160,
                     }}
                 >
-                    {/* Eyes Row */}
-                    <div className="flex justify-center gap-4 mb-2">
+                    {/* Eyes */}
+                    <div className="flex justify-around mb-2">
                         {/* Left Eye */}
                         <div
                             className="w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all duration-500"
@@ -162,7 +165,7 @@ const RichAgentNode: React.FC<RichAgentNodeProps> = memo(({ data }) => {
                         {/* Status Pill (Center) */}
                         {data.status && (
                             <span
-                                className="px-2 py-0.5 rounded-full text-[9px] font-semibold uppercase tracking-wide transition-all duration-500"
+                                className="text-[9px] px-2 py-0.5 rounded-full font-semibold uppercase tracking-wide transition-all duration-500"
                                 style={{
                                     backgroundColor: (isActive || isOrchestrator) ? config.color + '40' : '#1C191740',
                                     color: (isActive || isOrchestrator) ? config.color : '#57534E',
@@ -184,7 +187,7 @@ const RichAgentNode: React.FC<RichAgentNodeProps> = memo(({ data }) => {
 
                     {/* Thought Stream (Last thought) */}
                     {data.thoughts && data.thoughts.length > 0 && (
-                        <div className="mt-2 p-1.5 rounded bg-stone-900/50 border border-stone-800">
+                        <div className="mt-2 p-1.5 rounded bg-stone-900/50 border border-stone-800 max-w-[160px]">
                             <p className="text-[8px] text-stone-400 leading-tight truncate">
                                 💭 {data.thoughts[0]}
                             </p>

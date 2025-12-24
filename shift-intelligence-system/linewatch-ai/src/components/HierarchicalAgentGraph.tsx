@@ -11,17 +11,17 @@ import { useStore, type LogEntry } from '../store/useStore';
 import RichAgentNode from './RichAgentNode';
 
 // Thought Bubble Node Component
-const ThoughtBubbleNode: React.FC<{ data: { text: string; agentColor: string; offsetX: number } }> = ({ data }) => {
+const ThoughtBubbleNode: React.FC<{ data: { text: string; agentColor: string; isDragged: boolean; onClose: () => void; onDragStart: () => void } }> = ({ data }) => {
     return (
         <div 
-            className="pointer-events-none"
+            className="pointer-events-auto cursor-move"
             style={{
-                animation: 'thoughtDrift 12s ease-out forwards',
-                transform: `translateX(${data.offsetX}px)`,
+                animation: data.isDragged ? 'none' : 'thoughtDrift 12s ease-out forwards',
             }}
+            onMouseDown={data.onDragStart}
         >
             <div 
-                className="p-3 rounded-lg shadow-lg max-w-xs"
+                className="p-3 rounded-lg shadow-lg max-w-xs relative"
                 style={{ 
                     backgroundColor: data.agentColor + '40', 
                     borderColor: data.agentColor, 
@@ -29,6 +29,17 @@ const ThoughtBubbleNode: React.FC<{ data: { text: string; agentColor: string; of
                     borderStyle: 'solid' 
                 }}
             >
+                {/* Close button */}
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        data.onClose();
+                    }}
+                    className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-stone-700 hover:bg-stone-600 text-stone-300 hover:text-white flex items-center justify-center text-xs font-bold transition-colors"
+                    style={{ cursor: 'pointer' }}
+                >
+                    ×
+                </button>
                 <p className="text-xs text-stone-200 leading-tight font-medium">
                     {data.text}
                 </p>
@@ -84,6 +95,8 @@ interface ThoughtBubbleData {
     text: string;
     timestamp: number;
     offsetX?: number;
+    isDragged?: boolean;
+    timeoutId?: number;
 }
 
 const HierarchicalAgentGraph: React.FC = () => {
@@ -148,19 +161,27 @@ const HierarchicalAgentGraph: React.FC = () => {
                     
                     // Add horizontal offset variation (-40 to +40 pixels)
                     const offsetX = (Math.random() - 0.5) * 80;
+                    console.log('[Bubble] Creating bubble with offsetX:', offsetX);
+                    
+                    // Auto-remove after 12 seconds
+                    const timeoutId = window.setTimeout(() => {
+                        setThoughtBubbles(prev => {
+                            const bubble = prev.find(b => b.id === bubbleId);
+                            // Don't remove if it was dragged
+                            if (bubble?.isDragged) return prev;
+                            return prev.filter(b => b.id !== bubbleId);
+                        });
+                    }, 12000);
                     
                     setThoughtBubbles(prev => [...prev, {
                         id: bubbleId,
                         agentId: agent,
                         text: thought,
                         timestamp: Date.now(),
-                        offsetX
+                        offsetX,
+                        isDragged: false,
+                        timeoutId,
                     }]);
-                    
-                    // Remove bubble after 12 seconds
-                    setTimeout(() => {
-                        setThoughtBubbles(prev => prev.filter(b => b.id !== bubbleId));
-                    }, 12000);
                     
                     // Clear any existing timeout
                     if (activeAgentTimeoutRef.current) {
@@ -171,12 +192,12 @@ const HierarchicalAgentGraph: React.FC = () => {
                     setCurrentActiveAgent(agent);
                     console.log('[ActiveAgent] Set active agent to:', agent);
                     
-                    // Auto-reset after 3 seconds
+                    // Auto-reset after 5 seconds (increased from 3)
                     activeAgentTimeoutRef.current = setTimeout(() => {
                         console.log('[ActiveAgent] Resetting active agent from:', agent);
                         setCurrentActiveAgent(null);
                         activeAgentTimeoutRef.current = null;
-                    }, 3000);
+                    }, 5000);
                 }
                 
                 // Handle token stats
@@ -299,22 +320,45 @@ const HierarchicalAgentGraph: React.FC = () => {
             },
         ];
 
-        // Add thought bubble nodes
-        const thoughtBubbleNodes = thoughtBubbles.map((bubble) => {
+        // Add thought bubble nodes with vertical stacking
+        const thoughtBubbleNodes = thoughtBubbles.map((bubble, index) => {
             const position = POSITIONS[bubble.agentId as keyof typeof POSITIONS];
             if (!position) return null;
+
+            // Count how many bubbles for this agent came before this one
+            const agentBubblesBefore = thoughtBubbles
+                .slice(0, index)
+                .filter(b => b.agentId === bubble.agentId).length;
 
             return {
                 id: bubble.id,
                 type: 'thoughtBubble',
-                position: { x: position.x, y: position.y - 100 },
+                position: { 
+                    x: position.x + (bubble.offsetX || 0), // Apply horizontal offset to position
+                    y: position.y - 100 - (agentBubblesBefore * 60) // Stack vertically with 60px spacing
+                },
                 data: {
                     text: bubble.text,
                     agentColor: agentColors[bubble.agentId] || '#6B7280',
-                    offsetX: (bubble as any).offsetX || 0,
+                    isDragged: bubble.isDragged || false,
+                    onClose: () => {
+                        setThoughtBubbles(prev => prev.filter(b => b.id !== bubble.id));
+                        if (bubble.timeoutId) {
+                            clearTimeout(bubble.timeoutId);
+                        }
+                    },
+                    onDragStart: () => {
+                        // Mark as dragged to prevent auto-removal
+                        setThoughtBubbles(prev => prev.map(b => 
+                            b.id === bubble.id ? { ...b, isDragged: true } : b
+                        ));
+                        if (bubble.timeoutId) {
+                            clearTimeout(bubble.timeoutId);
+                        }
+                    },
                 },
-                draggable: false,
-                selectable: false,
+                draggable: true,
+                selectable: true,
             };
         }).filter(Boolean) as any[];
 

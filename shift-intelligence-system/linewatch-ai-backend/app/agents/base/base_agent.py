@@ -114,6 +114,10 @@ class BaseAgent(ABC):
         self.total_input_tokens = 0
         self.total_output_tokens = 0
         
+        # Thought signature tracking (Gemini 3 feature for maintaining reasoning state)
+        self.thought_signatures: list = []  # Store all thought signatures over time
+        self.latest_thought_signature: str | None = None  # Most recent signature to pass back
+        
         self.logger.info(f"✅ {agent_name} initialized with Gemini 3 ({model_name})")
     
     async def _broadcast_thought(self, message: str, message_type: str = "agent_activity"):
@@ -184,6 +188,63 @@ class BaseAgent(ABC):
             self.logger.debug(f"Failed to track tokens: {e}")
             pass  # Non-critical, don't fail reasoning
 
+    async def _extract_thought_signature(self, result: dict) -> None:
+        """
+        Extract thought signature from Gemini 3 response and store it.
+        Thought signatures maintain reasoning state across API calls.
+        """
+        try:
+            # Check if response contains thought_signature
+            messages = result.get("messages", [])
+            if not messages:
+                return
+            
+            last_message = messages[-1]
+            
+            # Extract thought signature from content parts
+            thought_sig = None
+            if hasattr(last_message, 'content'):
+                content = last_message.content
+                
+                # Handle different content formats
+                if isinstance(content, list):
+                    for part in content:
+                        if isinstance(part, dict) and 'thought_signature' in part:
+                            thought_sig = part['thought_signature']
+                            break
+                elif isinstance(content, dict) and 'thought_signature' in content:
+                    thought_sig = content['thought_signature']
+            
+            if thought_sig:
+                # Store signature with timestamp
+                signature_data = {
+                    'signature': thought_sig,
+                    'timestamp': datetime.now().isoformat(),
+                    'agent': self.agent_name
+                }
+                self.thought_signatures.append(signature_data)
+                self.latest_thought_signature = thought_sig
+                
+                # Broadcast to frontend
+                from app.services.websocket import manager
+                agent_id = self.agent_name.replace("Agent", "").replace("Master", "").lower()
+                if agent_id == "orchestrator":
+                    agent_id = "orchestrator"
+                
+                await manager.broadcast({
+                    "type": "thought_signature",
+                    "data": {
+                        "agent": agent_id,
+                        "signature_preview": thought_sig[:50] + "..." if len(thought_sig) > 50 else thought_sig,
+                        "timestamp": signature_data['timestamp'],
+                        "total_signatures": len(self.thought_signatures)
+                    }
+                })
+                
+                self.logger.debug(f"[{self.agent_name}] Captured thought signature (total: {len(self.thought_signatures)})")
+        except Exception as e:
+            self.logger.error(f"Failed to extract thought signature: {e}")
+
     # ========== REASONING PHASE ==========
     
     async def reason(self, context: Dict[str, Any]) -> ReasoningResult:
@@ -208,9 +269,20 @@ class BaseAgent(ABC):
         # Build reasoning prompt
         reasoning_prompt = self._build_reasoning_prompt(context)
         
+        # Prepare messages with thought signature if available
+        messages = [HumanMessage(content=reasoning_prompt)]
+        
+        # Include latest thought signature to maintain reasoning continuity
+        if self.latest_thought_signature:
+            # Add thought signature to maintain context (Gemini 3 feature)
+            messages.append({
+                "role": "model",
+                "parts": [{"thought_signature": self.latest_thought_signature}]
+            })
+        
         # Invoke Gemini 3 with thinking enabled
         result = await self.agent.ainvoke(
-            {"messages": [HumanMessage(content=reasoning_prompt)]},
+            {"messages": messages},
             config={
                 "configurable": {
                     "thread_id": f"{self.agent_name}-reasoning",
@@ -221,6 +293,9 @@ class BaseAgent(ABC):
         
         # Track token usage
         await self._track_tokens(result)
+        
+        # Extract and store thought signature
+        await self._extract_thought_signature(result)
         
         # Extract Gemini 3's thoughts and reasoning
         thoughts = self._extract_thoughts(result)
@@ -714,27 +789,8 @@ Needs: Higher-level coordination or human decision
         try:
             result = await llm.ainvoke(system)
             
-            # Track tokens (llm.ainvoke doesn't return usage, but we can track the call)
-            # Note: with_structured_output doesn't expose token usage easily
-            # We'll increment a counter as a proxy
-            self.total_input_tokens += 100  # Rough estimate
-            self.total_output_tokens += 50   # Rough estimate
-            
-            # Broadcast updated stats
-            from app.services.websocket import manager
-            agent_id = self.agent_name.replace("Agent", "").replace("Master", "").lower()
-            if agent_id == "orchestrator":
-                agent_id = "orchestrator"
-            
-            await manager.broadcast({
-                "type": "agent_stats_update",
-                "data": {
-                    "agent": agent_id,
-                    "input_tokens": self.total_input_tokens,
-                    "output_tokens": self.total_output_tokens,
-                    "timestamp": datetime.now().isoformat()
-                }
-            })
+            # Note: with_structured_output doesn't expose token usage metadata
+            # Token tracking happens in the reason() method where we have access to usage data
             
             await self._broadcast_thought(f"Proposed tool: {result.tool_name} - {result.rationale[:80]}...")
             
