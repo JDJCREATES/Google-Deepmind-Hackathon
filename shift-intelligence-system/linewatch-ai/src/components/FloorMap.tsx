@@ -1,22 +1,24 @@
 import React, { useEffect, useLayoutEffect, useState, useRef } from 'react';
 import Konva from 'konva';
 import { Stage, Layer, Rect, Text, Group, Circle, RegularPolygon, Arc } from 'react-konva';
-import { useStore } from '../store/useStore';
+import { useStore, type ConveyorBox, type MachineProductionState, type WarehouseInventory } from '../store/useStore';
 
-// Professional color theme - no purple
+// =============================================================================
+// THEME & CONSTANTS
+// =============================================================================
+
 const THEME = {
     bg: '#0F172A',
     grid: '#1E293B',
     machine: {
-        body: '#0EA5E9',      // Sky-500 (cyan-blue)
-        equipment: '#0D9488', // Teal-600
+        body: '#0EA5E9',
+        equipment: '#0D9488',
         connector: '#475569',
     },
     conveyor: {
         belt: '#64748B',
         running: '#10B981',
         stopped: '#EF4444',
-        gradient: ['#334155', '#475569'],
     },
     operator: {
         active: '#22C55E',
@@ -35,6 +37,19 @@ const THEME = {
         critical: '#EF4444',
     }
 };
+
+// Product colors for inventory display
+const PRODUCT_COLORS: Record<string, string> = {
+    widget_a: '#3B82F6',
+    widget_b: '#10B981',
+    gizmo_x: '#F59E0B',
+    gizmo_y: '#EF4444',
+    part_z: '#8B5CF6',
+};
+
+// =============================================================================
+// TYPE DEFINITIONS
+// =============================================================================
 
 interface MachineData {
     id: number;
@@ -91,20 +106,29 @@ interface ZoneData {
     color: string;
 }
 
+// =============================================================================
+// MAIN COMPONENT
+// =============================================================================
+
 const FloorMap: React.FC = () => {
     const { 
         layout, 
         fetchLayout, 
         activeOperators, 
         cameraStates, 
-        machineStates 
+        machineStates,
+        // Production System (NEW)
+        conveyorBoxes,
+        warehouseInventory,
+        machineProductionState,
     } = useStore();
+    
     const containerRef = useRef<HTMLDivElement>(null);
     const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
 
     useEffect(() => {
         fetchLayout();
-    }, []);
+    }, [fetchLayout]);
     
     useLayoutEffect(() => {
         const updateSize = () => {
@@ -114,7 +138,6 @@ const FloorMap: React.FC = () => {
             }
         };
         updateSize();
-        // Small delay to ensure container has sized
         const timeout = setTimeout(updateSize, 100);
         return () => clearTimeout(timeout);
     }, []);
@@ -135,7 +158,7 @@ const FloorMap: React.FC = () => {
         };
     }, []);
 
-    // Pattern generation helper
+    // Pattern generation for zones
     const createHatchPattern = (color: string) => {
         const canvas = document.createElement('canvas');
         canvas.width = 20;
@@ -145,7 +168,6 @@ const FloorMap: React.FC = () => {
             ctx.strokeStyle = color;
             ctx.lineWidth = 1;
             ctx.beginPath();
-            // Diagonal line
             ctx.moveTo(0, 20);
             ctx.lineTo(20, 0);
             ctx.stroke();
@@ -153,23 +175,21 @@ const FloorMap: React.FC = () => {
         return canvas;
     };
     
-    // Pattern state
     const [prodPattern, setProdPattern] = useState<HTMLCanvasElement | null>(null);
     const [warehousePattern, setWarehousePattern] = useState<HTMLCanvasElement | null>(null);
     
     useEffect(() => {
-        setProdPattern(createHatchPattern('#334155')); // Slate-700 for production
-        setWarehousePattern(createHatchPattern('#FCD34D')); // Amber-300 for warehouse
+        setProdPattern(createHatchPattern('#334155'));
+        setWarehousePattern(createHatchPattern('#FCD34D'));
     }, []);
 
     if (!layout || dimensions.width === 0) {
         return <div ref={containerRef} className="w-full h-full bg-stone-950 flex items-center justify-center text-stone-500 text-sm">Loading Floor Plan...</div>;
     }
 
-    // Merge static layout with live state
     const { zones, lines, cameras, operators, conveyors } = layout as any;
     
-    // Live Data Overrides
+    // Merge static layout with live state
     const liveOperators = operators?.map((op: OperatorData) => ({
         ...op,
         ...(activeOperators[op.id] || {})
@@ -181,11 +201,12 @@ const FloorMap: React.FC = () => {
     }));
 
     const liveLines = lines?.map((line: MachineData) => {
-        const state = machineStates[line.id];
+        const healthState = machineStates[line.id];
+        const prodState = machineProductionState[line.id];
         return {
             ...line,
-            health: state ? state.health : line.health,
-            // throughput: state ? state.throughput : 0, // could use for particle speed
+            health: healthState ? healthState.health : line.health,
+            productionState: prodState,
         };
     });
 
@@ -196,16 +217,17 @@ const FloorMap: React.FC = () => {
     const scaleY = dimensions.height / layoutHeight;
     const scale = Math.min(scaleX, scaleY) * 0.95;
     
-    const scaledWidth = layoutWidth * scale;
-    const scaledHeight = layoutHeight * scale;
-    const offsetX = (dimensions.width - scaledWidth) / 2;
-    const offsetY = (dimensions.height - scaledHeight) / 2;
+    const offsetX = (dimensions.width - layoutWidth * scale) / 2;
+    const offsetY = (dimensions.height - layoutHeight * scale) / 2;
 
     const getZonePattern = (id: string) => {
         if (id === 'production_floor') return prodPattern;
         if (id === 'warehouse') return warehousePattern;
         return null;
     };
+
+    // Convert conveyor boxes object to array
+    const conveyorBoxArray = Object.values(conveyorBoxes);
 
     return (
         <div ref={containerRef} className="w-full h-full overflow-hidden bg-stone-950">
@@ -219,22 +241,30 @@ const FloorMap: React.FC = () => {
                         <ZoneComp key={zone.id} zone={zone} pattern={getZonePattern(zone.id)} />
                     ))}
 
+                    {/* Warehouse Inventory Display (NEW) */}
+                    <WarehouseInventoryDisplay inventory={warehouseInventory} />
+
                     {/* Conveyors (Bottom Layer) */}
                     {conveyors?.map((conv: ConveyorData) => (
                         <ConveyorComp key={conv.id} conveyor={conv} />
                     ))}
 
-                    {/* Machine Stacks (Production Lines) */}
-                    {liveLines?.map((line: MachineData) => (
-                        <MachineStack key={line.id} machine={line} />
+                    {/* Real Conveyor Boxes (NEW) */}
+                    {conveyorBoxArray.map((box) => (
+                        <ConveyorBoxComp key={box.id} box={box} />
                     ))}
 
-                    {/* Operators (Middle Layer) */}
+                    {/* Machine Stacks with Production State */}
+                    {liveLines?.map((line: MachineData & { productionState?: MachineProductionState }) => (
+                        <MachineStack key={line.id} machine={line} productionState={line.productionState} />
+                    ))}
+
+                    {/* Operators */}
                     {liveOperators?.map((op: OperatorData) => (
                         <OperatorComp key={op.id} operator={op} />
                     ))}
 
-                    {/* Cameras (Top Layer for cones) */}
+                    {/* Cameras */}
                     {liveCameras?.map((cam: CameraData) => (
                         <CameraComp key={cam.id} camera={cam} />
                     ))}
@@ -244,7 +274,10 @@ const FloorMap: React.FC = () => {
     );
 };
 
-// Zone Component
+// =============================================================================
+// ZONE COMPONENT
+// =============================================================================
+
 const ZoneComp: React.FC<{ zone: ZoneData, pattern?: HTMLCanvasElement | null }> = ({ zone, pattern }) => {
     return (
         <Group x={zone.x} y={zone.y}>
@@ -257,10 +290,9 @@ const ZoneComp: React.FC<{ zone: ZoneData, pattern?: HTMLCanvasElement | null }>
                 stroke={zone.color}
                 strokeWidth={1.5}
                 cornerRadius={4}
-                opacity={pattern ? 0.4 : 1} // Reduced opacity for pattern
+                opacity={pattern ? 0.4 : 1}
             />
-            {/* If pattern is used, add a background color rect behind it if needed, or just let stage bg show through */}
-             <Text
+            <Text
                 text={zone.label.toUpperCase()}
                 fontSize={10}
                 fontFamily="Inter, sans-serif"
@@ -274,8 +306,125 @@ const ZoneComp: React.FC<{ zone: ZoneData, pattern?: HTMLCanvasElement | null }>
     );
 };
 
-// Machine Stack Component (Machine + Equipment + Connector to Conveyor)
-const MachineStack: React.FC<{ machine: MachineData }> = ({ machine }) => {
+// =============================================================================
+// WAREHOUSE INVENTORY DISPLAY (NEW)
+// =============================================================================
+
+const WarehouseInventoryDisplay: React.FC<{ inventory: WarehouseInventory }> = ({ inventory }) => {
+    const products = Object.entries(inventory).filter(([_, count]) => count > 0);
+    const totalBoxes = Object.values(inventory).reduce((a, b) => a + b, 0);
+    
+    // Position in warehouse zone (left side of canvas)
+    const baseX = 8;
+    const baseY = 60;
+    
+    return (
+        <Group x={baseX} y={baseY}>
+            {/* Title */}
+            <Text
+                text="INVENTORY"
+                fontSize={8}
+                fontFamily="Inter, sans-serif"
+                fill="#F59E0B"
+                fontStyle="600"
+            />
+            
+            {/* Total Count */}
+            <Text
+                text={`Total: ${totalBoxes}`}
+                fontSize={9}
+                fontFamily="JetBrains Mono, monospace"
+                fill="#E2E8F0"
+                y={12}
+            />
+            
+            {/* Product breakdown */}
+            {products.map(([type, count], i) => (
+                <Group key={type} y={28 + i * 16}>
+                    {/* Color indicator */}
+                    <Rect
+                        x={0}
+                        y={0}
+                        width={10}
+                        height={10}
+                        fill={PRODUCT_COLORS[type] || '#666'}
+                        cornerRadius={2}
+                    />
+                    {/* Count */}
+                    <Text
+                        x={14}
+                        y={0}
+                        text={`${count}`}
+                        fontSize={9}
+                        fontFamily="JetBrains Mono, monospace"
+                        fill="#E2E8F0"
+                    />
+                </Group>
+            ))}
+            
+            {/* Visual box stack representation */}
+            <Group y={28 + products.length * 16 + 10}>
+                {Array.from({ length: Math.min(totalBoxes, 20) }).map((_, i) => {
+                    const row = Math.floor(i / 4);
+                    const col = i % 4;
+                    return (
+                        <Rect
+                            key={i}
+                            x={col * 14}
+                            y={-row * 12}  // Stack upward
+                            width={12}
+                            height={10}
+                            fill="#78350F"
+                            stroke="#92400E"
+                            strokeWidth={0.5}
+                            cornerRadius={1}
+                        />
+                    );
+                })}
+                {totalBoxes > 20 && (
+                    <Text
+                        x={0}
+                        y={14}
+                        text={`+${totalBoxes - 20} more`}
+                        fontSize={7}
+                        fill="#94A3B8"
+                    />
+                )}
+            </Group>
+        </Group>
+    );
+};
+
+// =============================================================================
+// CONVEYOR BOX COMPONENT (NEW - Real boxes from backend)
+// =============================================================================
+
+const ConveyorBoxComp: React.FC<{ box: ConveyorBox }> = ({ box }) => {
+    return (
+        <Rect
+            x={box.x}
+            y={box.y}
+            width={14}
+            height={14}
+            fill={box.color}
+            stroke="#1E293B"
+            strokeWidth={1}
+            cornerRadius={2}
+            shadowColor={box.color}
+            shadowBlur={4}
+            shadowOpacity={0.4}
+        />
+    );
+};
+
+// =============================================================================
+// MACHINE STACK COMPONENT (Updated with fill indicator)
+// =============================================================================
+
+const MachineStack: React.FC<{ 
+    machine: MachineData, 
+    productionState?: MachineProductionState 
+}> = ({ machine, productionState }) => {
     const health = machine.health ?? 100;
     let statusColor = THEME.status.ok;
     if (health < 80) statusColor = THEME.status.warning;
@@ -291,9 +440,14 @@ const MachineStack: React.FC<{ machine: MachineData }> = ({ machine }) => {
     const equipY = machineH + gap;
     const connectorStartY = equipY + equipH;
     
+    // Production state
+    const fillLevel = productionState?.fill_level || 0;
+    const productColor = productionState?.product_color || THEME.machine.equipment;
+    const isRunning = productionState?.is_running !== false;
+    
     return (
         <Group x={machine.x} y={machine.y}>
-            {/* Machine Body (top box) */}
+            {/* Machine Body */}
             <Rect
                 x={0}
                 y={0}
@@ -307,6 +461,7 @@ const MachineStack: React.FC<{ machine: MachineData }> = ({ machine }) => {
                 shadowBlur={6}
                 shadowOpacity={0.3}
             />
+            
             {/* Machine Label */}
             <Text
                 text={machine.label}
@@ -319,7 +474,7 @@ const MachineStack: React.FC<{ machine: MachineData }> = ({ machine }) => {
                 align="center"
             />
             
-            {/* Connector from Machine to Equipment */}
+            {/* Connector */}
             <Rect
                 x={machineW / 2 - 2}
                 y={machineH}
@@ -328,20 +483,42 @@ const MachineStack: React.FC<{ machine: MachineData }> = ({ machine }) => {
                 fill={THEME.machine.connector}
             />
             
-            {/* Equipment Box (below machine) */}
+            {/* Equipment Box Background */}
             <Rect
                 x={(machineW - equipW) / 2}
                 y={equipY}
                 width={equipW}
                 height={equipH}
-                fill={THEME.machine.equipment}
+                fill="#2D3748"
+                cornerRadius={2}
+            />
+            
+            {/* Fill Level Indicator (renders inside equipment box) */}
+            <Rect
+                x={(machineW - equipW) / 2}
+                y={equipY + equipH - (equipH * fillLevel / 100)}
+                width={equipW}
+                height={equipH * fillLevel / 100}
+                fill={isRunning ? productColor : '#475569'}
+                cornerRadius={2}
+                opacity={isRunning ? 0.9 : 0.3}
+            />
+            
+            {/* Equipment Box Border */}
+            <Rect
+                x={(machineW - equipW) / 2}
+                y={equipY}
+                width={equipW}
+                height={equipH}
+                stroke={isRunning ? productColor : '#475569'}
+                strokeWidth={1.5}
                 cornerRadius={2}
                 shadowColor="#000"
                 shadowBlur={4}
                 shadowOpacity={0.2}
             />
             
-            {/* Connector Chute down to Main Conveyor */}
+            {/* Connector Chute */}
             <Group>
                 <Rect
                     x={machineW / 2 - 3}
@@ -351,7 +528,6 @@ const MachineStack: React.FC<{ machine: MachineData }> = ({ machine }) => {
                     fill={THEME.machine.connector}
                     opacity={0.6}
                 />
-                {/* Arrow head at bottom */}
                 <RegularPolygon
                     sides={3}
                     radius={5}
@@ -367,28 +543,40 @@ const MachineStack: React.FC<{ machine: MachineData }> = ({ machine }) => {
                 x={machineW - 5}
                 y={5}
                 radius={3}
-                fill={statusColor}
-                shadowColor={statusColor}
+                fill={isRunning ? statusColor : THEME.status.critical}
+                shadowColor={isRunning ? statusColor : THEME.status.critical}
                 shadowBlur={4}
                 shadowOpacity={0.8}
             />
+            
+            {/* Running indicator pulse */}
+            {isRunning && fillLevel > 0 && (
+                <Circle
+                    x={machineW / 2}
+                    y={equipY + equipH / 2}
+                    radius={2}
+                    fill="#FFF"
+                    opacity={0.6}
+                />
+            )}
         </Group>
     );
 };
 
-// Animated Operator Component
+// =============================================================================
+// OPERATOR COMPONENT
+// =============================================================================
+
 const OperatorComp: React.FC<{ operator: OperatorData }> = ({ operator }) => {
     const groupRef = useRef<any>(null);
     
-    // Tween movement when position changes
     useEffect(() => {
         if (!groupRef.current) return;
         
-        // Kill previous tweens if any
         groupRef.current.to({
             x: operator.x,
             y: operator.y,
-            duration: 4.0, // 4s transition (slightly faster than 5s tick for responsiveness)
+            duration: 0.8,
             easing: Konva.Easings.EaseInOut,
         });
     }, [operator.x, operator.y]);
@@ -397,22 +585,12 @@ const OperatorComp: React.FC<{ operator: OperatorData }> = ({ operator }) => {
     if (operator.status === 'monitoring') fillColor = THEME.operator.active;
     if (operator.status === 'moving') fillColor = THEME.operator.moving;
     if (operator.status === 'inspecting') fillColor = '#8B5CF6';
-    
-    // Use initial position for first render, then tween takes over
-    // logic: We render at the TARGET position initially if it's the very first mount? 
-    // Actually, storing the "current" pos in state is hard.
-    // Konva handles it: if we change key/prop 'x', React-Konva updates immediately.
-    // To animate, we must NOT bind x/y to props directly after mount, OR use the ref to override.
-    // But React-Konva will try to reset it on re-render.
-    // Solution: Pass initial x/y only? No, just let the tween override.
+    if (operator.status === 'working') fillColor = THEME.operator.active;
     
     return (
         <Group 
             ref={groupRef}
-            x={operator.x} // Note: This will jump on update if we don't handle it carefully.
-                           // Actually, simpler: Use a separate "visualPosition" state if we want perfect control.
-                           // But Konva.to() modifies the node instance directly. React-Konva usually respects that until props change.
-                           // Since props CHANGE every 5s, we trigger the tween then.
+            x={operator.x}
             y={operator.y}
         >
             <Circle radius={14} fill={fillColor} opacity={0.15} />
@@ -423,116 +601,14 @@ const OperatorComp: React.FC<{ operator: OperatorData }> = ({ operator }) => {
     );
 };
 
-// Product Stream Component for Conveyors
-const ProductStream: React.FC<{ 
-    conv: ConveyorData, 
-    boxColor: string, 
-    size: number 
-}> = ({ conv, boxColor, size }) => {
-    // Determine flow direction and limits
-    const isVertical = conv.direction === 'vertical';
-    const length = isVertical ? conv.height : conv.width;
-    const isReverse = (conv as any).flow === 'reverse'; // Type assertion for custom prop
-    
-    // Create particles
-    const particleCount = Math.floor(length / 40); // 1 box every 40px
-    const particles = Array.from({ length: particleCount }).map((_, i) => i);
+// =============================================================================
+// CONVEYOR COMPONENT (Simplified - no fake animations)
+// =============================================================================
 
-    return (
-        <Group x={0} y={0}>
-             {particles.map((i) => (
-                 <ProductBox 
-                    key={i} 
-                    index={i} 
-                    total={particleCount} 
-                    length={length} 
-                    isVertical={isVertical} 
-                    isReverse={isReverse}
-                    color={boxColor} 
-                    size={size}
-                    speed={4000} // Slower speed (4s loop)
-                 />
-             ))}
-        </Group>
-    );
-};
-
-const ProductBox: React.FC<{
-    index: number,
-    total: number,
-    length: number,
-    isVertical: boolean,
-    isReverse: boolean,
-    color: string,
-    size: number,
-    speed: number
-}> = ({ index, total, length, isVertical, isReverse, color, size, speed }) => {
-    const ref = useRef<any>(null);
-
-    useEffect(() => {
-        if (!ref.current) return;
-        
-        // Continuous loop animation
-        const anim = new Konva.Animation((frame) => {
-            if (!frame) return;
-            const time = frame.time + (index * (speed / total));
-            const progress = (time % speed) / speed;
-            
-            // Calculate Position
-            let pos = progress * length;
-            if (isReverse) {
-                pos = length - pos; // Move backwards
-            }
-            
-            if (isVertical) {
-                ref.current.y(pos);
-            } else {
-                ref.current.x(pos);
-            }
-            
-            // Fade in/out at edges
-            let opacity = 1;
-            // Standard fade logic (near 0 and near length)
-            // If reverse, logical start is length.
-            // But progress 0..1 maps to movement.
-            // Edge fading based on progress works regardless of direction
-            if (progress < 0.1) opacity = progress * 10;
-            if (progress > 0.9) opacity = (1 - progress) * 10;
-            ref.current.opacity(opacity);
-            
-        }, ref.current.getLayer());
-        
-        anim.start();
-        return () => {
-            anim.stop();
-        };
-    }, [index, total, length, speed, isVertical, isReverse]);
-
-    return (
-        <Rect
-            ref={ref}
-            x={isVertical ? (30 - size)/2 : 0} 
-            y={isVertical ? 0 : (10 - size)/2}
-            width={size}
-            height={size}
-            fill={color}
-            cornerRadius={1}
-        />
-    );
-}
-
-// Conveyor Component
 const ConveyorComp: React.FC<{ conveyor: ConveyorData }> = ({ conveyor }) => {
     const isRunning = conveyor.status === 'running';
     const statusColor = isRunning ? THEME.conveyor.running : THEME.conveyor.stopped;
     const isVertical = conveyor.direction === 'vertical';
-    
-    // Distinguish Main vs Feeder
-    const isMain = conveyor.id.includes('main');
-    
-    // Box style
-    const boxSize = isMain ? 12 : 6;
-    const boxColor = isMain ? '#FCD34D' : '#94A3B8'; // Gold (Packed) vs Slate (Raw)
 
     return (
         <Group x={conveyor.x} y={conveyor.y}>
@@ -544,15 +620,6 @@ const ConveyorComp: React.FC<{ conveyor: ConveyorData }> = ({ conveyor }) => {
                 cornerRadius={2}
             />
             
-            {/* Product Stream (Only if running) */}
-            {isRunning && (
-                <ProductStream 
-                    conv={conveyor} 
-                    boxColor={boxColor} 
-                    size={boxSize} 
-                />
-            )}
-            
             {/* Status indicator line */}
             <Rect
                 x={0}
@@ -562,28 +629,35 @@ const ConveyorComp: React.FC<{ conveyor: ConveyorData }> = ({ conveyor }) => {
                 fill={statusColor}
                 cornerRadius={1}
             />
+            
+            {/* Direction arrows (visual hint) */}
+            {isRunning && !isVertical && (
+                <Group>
+                    {Array.from({ length: Math.floor(conveyor.width / 60) }).map((_, i) => (
+                        <Text
+                            key={i}
+                            x={conveyor.width - 20 - i * 60}
+                            y={conveyor.height / 2 - 4}
+                            text="◀"
+                            fontSize={8}
+                            fill="#94A3B8"
+                            opacity={0.5}
+                        />
+                    ))}
+                </Group>
+            )}
         </Group>
     );
 };
 
-// Camera Component
+// =============================================================================
+// CAMERA COMPONENT
+// =============================================================================
+
 const CameraComp: React.FC<{ camera: CameraData }> = ({ camera }) => {
     const isActive = camera.status === 'active';
-    
-    // Calculate Cone Points based on FOV and Range
-    // (0,0) is camera tip.
-    // Base rotation 0 points DOWN in this coordinate system for Konva setup? 
-    // Previous code [0,0, -8, 25, 8, 25] implies Y+ is the direction.
-    // So let's calculate angles relative to "DOWN" (90 deg).
-    // Actually, simple math:
-    // Left point X = length * sin(-fov/2)
-    // Left point Y = length * cos(-fov/2)
-    // etc.
-    
     const range = camera.range || 100;
     const fov = camera.fov || 60;
-    
-    // Cone visual properties
     const coneColor = isActive ? THEME.camera.active : THEME.camera.cone;
 
     return (
@@ -595,14 +669,14 @@ const CameraComp: React.FC<{ camera: CameraData }> = ({ camera }) => {
                 fill={THEME.camera.body}
                 stroke={isActive ? THEME.camera.active : '#475569'}
                 strokeWidth={1}
-                rotation={180} // Point triangle down relative to group
+                rotation={180}
             />
-             {/* Vision cone (Single Uniform Arc) */}
-             <Arc
+            {/* Vision cone */}
+            <Arc
                 innerRadius={0}
                 outerRadius={range}
                 angle={fov}
-                rotation={90 - (fov/2)} // Center the arc downwards
+                rotation={90 - (fov/2)}
                 fill={coneColor}
                 opacity={isActive ? 0.2 : 0.05}
                 stroke={isActive ? coneColor : 'transparent'}

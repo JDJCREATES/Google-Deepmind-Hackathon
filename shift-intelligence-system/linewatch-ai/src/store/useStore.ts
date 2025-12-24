@@ -2,6 +2,10 @@ import { create } from 'zustand';
 import type { FloorLayout } from '../types';
 import { api, WS_URL } from '../services/api';
 
+// =============================================================================
+// TYPE DEFINITIONS (EXPORTED for use in components)
+// =============================================================================
+
 export interface LogEntry {
     id: string;
     timestamp: string;
@@ -11,32 +15,60 @@ export interface LogEntry {
     data?: any;
 }
 
+export interface ConveyorBox {
+    id: string;
+    x: number;
+    y: number;
+    color: string;
+    product_type: string;
+}
+
+export interface MachineProductionState {
+    fill_level: number;
+    small_boxes: number;
+    product_type: string;
+    product_color: string;
+    is_running: boolean;
+}
+
+export interface WarehouseInventory {
+    [productType: string]: number;
+}
+
 interface State {
     // Static Data
     layout: FloorLayout | null;
     isLoading: boolean;
     error: string | null;
 
-    // Live Data
+    // Live Data - Connection
     socket: WebSocket | null;
     isConnected: boolean;
     logs: LogEntry[];
     thoughtSignatures: Record<string, number>;
     
-    // Map Entity States
+    // Live Data - Map Entities
     activeOperators: Record<string, any>;
-    machineStates: Record<string, any>;
+    machineStates: Record<number, any>;
     cameraStates: Record<string, any>;
+    
+    // Live Data - Production System (NEW)
+    conveyorBoxes: Record<string, ConveyorBox>;
+    warehouseInventory: WarehouseInventory;
+    machineProductionState: Record<number, MachineProductionState>;
 
     // Actions
     fetchLayout: () => Promise<void>;
     connectWebSocket: () => void;
-    
-    // Manual Controls
     toggleSimulation: () => Promise<void>;
 }
 
+// =============================================================================
+// STORE IMPLEMENTATION
+// =============================================================================
+
 export const useStore = create<State>((set, get) => ({
+    // Initial State
     layout: null,
     isLoading: false,
     error: null,
@@ -47,6 +79,15 @@ export const useStore = create<State>((set, get) => ({
     activeOperators: {},
     machineStates: {},
     cameraStates: {},
+    
+    // Production System State (NEW)
+    conveyorBoxes: {},
+    warehouseInventory: {},
+    machineProductionState: {},
+
+    // =========================================================================
+    // ACTIONS
+    // =========================================================================
 
     fetchLayout: async () => {
         set({ isLoading: true });
@@ -65,7 +106,6 @@ export const useStore = create<State>((set, get) => ({
 
         socket.onopen = () => {
             set({ isConnected: true });
-            // Optional: push a system entry if needed, or just leave it empty
             const initEntry: LogEntry = {
                 id: 'sys-init',
                 type: 'system',
@@ -80,7 +120,11 @@ export const useStore = create<State>((set, get) => ({
             try {
                 const message = JSON.parse(event.data);
                 
-                // Handle Map Updates (Do not log these to activity feed if high frequency)
+                // =============================================================
+                // HIGH-FREQUENCY UPDATES (Don't log to activity feed)
+                // =============================================================
+                
+                // Operator position updates
                 if (message.type === 'operator_update') {
                     set(state => ({
                         activeOperators: {
@@ -91,6 +135,7 @@ export const useStore = create<State>((set, get) => ({
                     return;
                 }
 
+                // Camera detection updates
                 if (message.type === 'camera_detection') {
                     set(state => ({
                         cameraStates: {
@@ -98,12 +143,12 @@ export const useStore = create<State>((set, get) => ({
                             [message.data.camera_id]: message.data
                         }
                     }));
-                    return; // Should we log detections? Maybe yes, but handled below if not returned
+                    return;
                 }
 
-                // Skip line_status messages - they're just noise for the Activity Log
+                // Line status updates (health)
                 if (message.type === 'line_status') {
-                     set(state => ({
+                    set(state => ({
                         machineStates: {
                             ...state.machineStates,
                             [message.data.line_id]: message.data
@@ -112,7 +157,78 @@ export const useStore = create<State>((set, get) => ({
                     return;
                 }
                 
-                // Handle thought signature events
+                // =============================================================
+                // PRODUCTION SYSTEM UPDATES (NEW)
+                // =============================================================
+                
+                // Machine production state (fill levels, product type)
+                if (message.type === 'machine_production_state') {
+                    set(state => ({
+                        machineProductionState: {
+                            ...state.machineProductionState,
+                            [message.data.line_id]: message.data
+                        }
+                    }));
+                    return;
+                }
+                
+                // Large box dropped onto conveyor
+                if (message.type === 'large_box_dropped') {
+                    set(state => ({
+                        conveyorBoxes: {
+                            ...state.conveyorBoxes,
+                            [message.data.id]: message.data
+                        }
+                    }));
+                    return;
+                }
+                
+                // Conveyor box position update
+                if (message.type === 'conveyor_box_update') {
+                    set(state => ({
+                        conveyorBoxes: {
+                            ...state.conveyorBoxes,
+                            [message.data.id]: message.data
+                        }
+                    }));
+                    return;
+                }
+                
+                // Box arrived at warehouse
+                if (message.type === 'box_arrived_warehouse') {
+                    set(state => {
+                        // Remove box from conveyor
+                        const newConveyorBoxes = { ...state.conveyorBoxes };
+                        delete newConveyorBoxes[message.data.id];
+                        
+                        // Update warehouse inventory
+                        return {
+                            conveyorBoxes: newConveyorBoxes,
+                            warehouseInventory: {
+                                ...state.warehouseInventory,
+                                [message.data.product_type]: message.data.total
+                            }
+                        };
+                    });
+                    return;
+                }
+                
+                // Full warehouse inventory update
+                if (message.type === 'warehouse_inventory') {
+                    set({ warehouseInventory: message.data });
+                    return;
+                }
+                
+                // Small box created (optional - for detailed tracking)
+                if (message.type === 'small_box_created') {
+                    // Currently not rendered, but could be used for animations
+                    return;
+                }
+                
+                // =============================================================
+                // THOUGHT SIGNATURES
+                // =============================================================
+                
                 if (message.type === 'thought_signature') {
                     const agent = message.data?.agent;
                     const count = message.data?.total_signatures || 0;
@@ -127,7 +243,18 @@ export const useStore = create<State>((set, get) => ({
                     return;
                 }
                 
-                // Create structured log entry
+                // =============================================================
+                // SYSTEM STATUS (Don't clutter activity log)
+                // =============================================================
+                
+                if (message.type === 'system_status') {
+                    return;
+                }
+                
+                // =============================================================
+                // LOGGABLE EVENTS (Show in Activity Log)
+                // =============================================================
+                
                 const logEntry: LogEntry = {
                     id: `log-${Date.now()}-${Math.random()}`,
                     type: message.type || 'unknown',
@@ -138,7 +265,7 @@ export const useStore = create<State>((set, get) => ({
                 };
 
                 set((state) => ({
-                    logs: [logEntry, ...state.logs].slice(0, 100), // Keep last 100
+                    logs: [logEntry, ...state.logs].slice(0, 100),
                 }));
             } catch (err) {
                 console.error('Failed to parse WebSocket message:', err);
@@ -162,21 +289,26 @@ export const useStore = create<State>((set, get) => ({
     
     toggleSimulation: async () => {
         try {
-            console.log('[DEBUG] toggleSimulation called');
             const status = await api.simulation.getStatus();
-            console.log('[DEBUG] Current simulation status:', status);
             
             if (status.running) {
-                console.log('[DEBUG] Calling stop...');
                 await api.simulation.stop();
-                console.log('[DEBUG] Stop call complete');
+                // Clear production state on stop
+                set({
+                    conveyorBoxes: {},
+                    machineProductionState: {},
+                });
             } else {
-                console.log('[DEBUG] Calling start...');
                 await api.simulation.start();
-                console.log('[DEBUG] Start call complete');
+                // Clear state on start (fresh simulation)
+                set({
+                    conveyorBoxes: {},
+                    warehouseInventory: {},
+                    machineProductionState: {},
+                });
             }
         } catch(e) { 
-            console.error('[DEBUG] Failed to toggle simulation:', e);
+            console.error('Failed to toggle simulation:', e);
         }
     }
 }));
