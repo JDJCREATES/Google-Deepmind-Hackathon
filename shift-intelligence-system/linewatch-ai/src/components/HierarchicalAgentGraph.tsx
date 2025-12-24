@@ -173,7 +173,8 @@ const HierarchicalAgentGraph: React.FC = () => {
     useEffect(() => {
         if (logs.length === 0) return;
         
-        const latestLog = logs[0].toLowerCase();
+        const latestLog = logs[0];
+        const logContent = (latestLog.description || latestLog.type).toLowerCase();
         
         // Detect which agent + reasoning step is active
         const agentMap: Record<string, string> = {
@@ -199,14 +200,14 @@ const HierarchicalAgentGraph: React.FC = () => {
         let activeReasoning: string | null = null;
         
         for (const [keyword, agentId] of Object.entries(agentMap)) {
-            if (latestLog.includes(keyword)) {
+            if (logContent.includes(keyword)) {
                 activeAgent = agentId;
                 break;
             }
         }
         
         for (const [keyword, reasoningId] of Object.entries(reasoningMap)) {
-            if (latestLog.includes(keyword)) {
+            if (logContent.includes(keyword)) {
                 activeReasoning = reasoningId;
                 break;
             }

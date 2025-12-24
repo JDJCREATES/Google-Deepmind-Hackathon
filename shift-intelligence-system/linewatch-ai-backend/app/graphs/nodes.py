@@ -16,9 +16,10 @@ Each node represents a step in the hypothesis-driven reasoning process:
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
+from pydantic import BaseModel, Field
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.config import settings
@@ -37,6 +38,7 @@ from app.reasoning import (
     StrategicMemory,
 )
 from app.utils.logging import get_agent_logger
+from app.utils.llm import with_retry
 from app.graphs.state import HypothesisMarketState
 
 
@@ -45,6 +47,39 @@ logger = get_agent_logger("HypothesisNodes")
 # Shared instances
 drift_detector = FrameworkDriftDetector()
 strategic_memory = StrategicMemory()
+
+
+# ==========================================
+# Structured Output Models (Pydantic)
+# ==========================================
+
+class FrameworkClassification(BaseModel):
+    """Result of framework classification."""
+    frameworks: List[str] = Field(
+        description="List of applicable epistemic frameworks (e.g. ['RCA', 'TOC'])",
+        min_items=1
+    )
+    reasoning: str = Field(description="Brief explanation of why these frameworks apply")
+
+class BeliefUpdateResult(BaseModel):
+    """Result of Bayesian belief update."""
+    posteriors: Dict[str, float] = Field(
+        description="Map of hypothesis IDs to posterior probabilities"
+    )
+    leading_hypothesis_id: Optional[str] = Field(
+        description="ID of the hypothesis with highest posterior",
+        default=None
+    )
+    leader_confidence: float = Field(
+        description="Posterior probability of the leading hypothesis",
+        ge=0.0,
+        le=1.0
+    )
+    converged: bool = Field(
+        description="Whether confidence is high enough to act (>0.7)",
+        default=False
+    )
+    reasoning: str = Field(description="Explanation of the belief update calculation")
 
 
 async def load_knowledge_node(state: HypothesisMarketState) -> Dict[str, Any]:
@@ -80,6 +115,9 @@ async def classify_frameworks_node(state: HypothesisMarketState) -> Dict[str, An
         temperature=0.3,
     )
     
+    # Use structured output for guaranteed schema compliance
+    structured_llm = llm.with_structured_output(FrameworkClassification)
+    
     prompt = f"""
 Classify which epistemic frameworks apply to this manufacturing signal.
 
@@ -93,21 +131,17 @@ AVAILABLE FRAMEWORKS:
 4. TOC (Theory of Constraints) - For "What's the bottleneck?" optimization
 5. HACCP - For "Are we violating compliance?" food safety
 
-Output a JSON list of applicable framework codes (e.g., ["RCA", "TOC"]).
-Include at least 2 frameworks for comprehensive analysis.
+Select at least 2 relevant frameworks.
 """
 
-    result = await llm.ainvoke(prompt)
-    
-    # Parse frameworks (simple extraction)
-    content = result.content
-    frameworks = []
-    for fw in ["RCA", "COUNTERFACTUAL", "FMEA", "TOC", "HACCP"]:
-        if fw in content:
-            frameworks.append(fw)
-    
-    if not frameworks:
-        frameworks = ["RCA", "TOC"]  # Default
+    try:
+        result = await structured_llm.ainvoke(prompt)
+        frameworks = result.frameworks
+        reasoning = result.reasoning
+        logger.info(f"✅ Classified frameworks: {frameworks} ({reasoning})")
+    except Exception as e:
+        logger.error(f"Failed to classify frameworks: {e}")
+        frameworks = ["RCA", "TOC"]  # Fallback
     
     logger.info(f"✅ Applicable frameworks: {frameworks}")
     
@@ -304,6 +338,9 @@ async def update_beliefs_node(state: HypothesisMarketState) -> Dict[str, Any]:
         temperature=0.2,  # Low for precise reasoning
     )
     
+    # Use structured output for guaranteed schema compliance
+    structured_llm = llm.with_structured_output(BeliefUpdateResult)
+    
     prompt = f"""
 Perform Bayesian belief update for these hypotheses given the evidence.
 
@@ -318,48 +355,22 @@ For each hypothesis:
 2. Calculate posterior probability
 3. Ensure posteriors sum to approximately 1.0
 
-Output JSON with:
-- "posteriors": {{hypothesis_id: probability}}
-- "leading_hypothesis": hypothesis_id with highest posterior
-- "leader_confidence": posterior of leader
-- "converged": true if leader confidence > 0.7
+Output the detailed calculations and final posteriors according to the schema.
 """
 
-    result = await llm.ainvoke(prompt)
-    
-    # Parse result (simplified)
     try:
-        import json
-        import re
+        result = await structured_llm.ainvoke(prompt)
+        posteriors = result.posteriors
+        leading = result.leading_hypothesis_id
+        confidence = result.leader_confidence
+        converged = result.converged
         
-        content = result.content
-        # Handle case where content might be a list (rare but possible with some models)
-        if isinstance(content, list):
-            content = " ".join([str(c) for c in content])
-        elif not isinstance(content, str):
-            content = str(content)
-            
-        logger.info(f"🔍 [DEBUG] Belief Update Response: {content[:100]}...")
+        logger.info(f"✅ Beliefs updated. Leader confidence: {confidence:.2f} ({result.reasoning[:50]}...)")
         
-        json_match = re.search(r'\{.*\}', content, re.DOTALL)
-        if json_match:
-            data = json.loads(json_match.group())
-            posteriors = data.get("posteriors", {})
-            leading = data.get("leading_hypothesis")
-            confidence = data.get("leader_confidence", 0.5)
-            converged = data.get("converged", False)
-        else:
-            # Default to first hypothesis
-            posteriors = {hypotheses[0].hypothesis_id: 0.6}
-            leading = hypotheses[0].hypothesis_id
-            confidence = 0.6
-            converged = False
     except Exception as e:
-        logger.error(f"Error parsing beliefs: {e}")
-        posteriors = {hypotheses[0].hypothesis_id: 0.5}
-        leading = hypotheses[0].hypothesis_id
-        confidence = 0.5
-        converged = False
+        logger.error(f"Failed to update beliefs: {e}")
+        return {"converged": False}
+
     
     # Update hypothesis confidences
     for h in hypotheses:

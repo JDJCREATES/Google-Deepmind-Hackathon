@@ -2,6 +2,15 @@ import { create } from 'zustand';
 import type { FloorLayout, Line } from '../types';
 import { api, WS_URL } from '../services/api';
 
+export interface LogEntry {
+    id: string;
+    timestamp: string;
+    type: string;
+    source?: string;
+    description?: string;
+    data?: any;
+}
+
 interface State {
     // Static Data
     layout: FloorLayout | null;
@@ -11,7 +20,7 @@ interface State {
     // Live Data
     socket: WebSocket | null;
     isConnected: boolean;
-    logs: string[];
+    logs: LogEntry[];
 
     // Actions
     fetchLayout: () => Promise<void>;
@@ -46,7 +55,14 @@ export const useStore = create<State>((set, get) => ({
 
         socket.onopen = () => {
             set({ isConnected: true });
-            get().logs.push('Connected to Agent system');
+            // Optional: push a system entry if needed, or just leave it empty
+            const initEntry: LogEntry = {
+                id: 'sys-init',
+                timestamp: new Date().toLocaleTimeString(),
+                type: 'system_status',
+                description: 'Connected to Agent system'
+            };
+            set((state: any) => ({ logs: [initEntry, ...state.logs] }));
         };
 
         socket.onclose = () => {
@@ -89,7 +105,21 @@ function handleIncomingMessage(set: any, get: any, msg: any) {
     // ===== PRIORITY: Show ONLY Agent Reasoning & AI Thinking =====
     // Filter OUT all simulation/input data - we want to showcase the AI, not the fake data
     
-    const AGENT_TYPES = ['agent_thought', 'agent_decision', 'agent_reasoning', 'hypothesis', 'evidence', 'belief', 'action'];
+    // Key event types we want to show rich details for
+    const VISIBLE_TYPES = [
+        'agent_thought', 
+        'agent_decision', 
+        'agent_reasoning', 
+        'hypothesis', 
+        'hypotheses_generated', 
+        'evidence', 
+        'belief', 
+        'action', 
+        'investigation_start',
+        'visual_signal',
+        'reasoning_phase'
+    ];
+    
     const SYSTEM_TYPES = ['system_alert', 'system_status'];
     
     // Silently update line health without logging
@@ -117,36 +147,29 @@ function handleIncomingMessage(set: any, get: any, msg: any) {
         'system_status'  // Hide system status updates
     ];
     
+    // If it's pure noise, skip
     if (SIMULATION_NOISE.includes(msg.type)) {
-        return; // Skip entirely
+        // Exception: Show CRITICAL events in a special way if needed, 
+        // but generally we want to see the AGENT'S reaction to them, not the event itself.
+        // For 'visual_signal' (smoke detected), we DO want to show it.
+        if (msg.type !== 'visual_signal') return;
     }
     
-    // Build log line for AGENT REASONING ONLY
-    let logLine = '';
+    // Create Structured Log Entry
+    const newEntry: LogEntry = {
+        id: `log-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        timestamp,
+        type: msg.type,
+        source: msg.data?.source || 'System',
+        description: msg.data?.description || msg.type,
+        data: msg.data
+    };
     
-    // Highlight agent thoughts with clear prefix
-    if (AGENT_TYPES.includes(msg.type)) {
-        const agentName = msg.data?.source || 'Agent';
-        logLine = `[${timestamp}] 🤖 ${agentName}: ${msg.data?.description || msg.type}`;
-    } 
-    // System alerts (critical only)
-    else if (SYSTEM_TYPES.includes(msg.type)) {
-        logLine = `[${timestamp}] ⚙️ SYSTEM: ${msg.data?.description || msg.type}`;
-    }
-    // Default: mark as unfiltered but show
-    else {
-        logLine = `[${timestamp}] ${msg.type}`;
-        if (msg.data?.description) {
-            logLine += `: ${msg.data.description}`;
-        } else if (msg.data?.source) {
-            logLine += ` from ${msg.data.source}`;
-        }
-    }
-    
-    // Only add to logs if we built a line
-    if (logLine) {
+    // Only add to logs if it's a type we care about regarding Agents/AI
+    // Or if it's explicitly an alert
+    if (VISIBLE_TYPES.includes(msg.type) || SYSTEM_TYPES.includes(msg.type) || msg.type === 'visual_signal') {
         set((state: any) => ({
-            logs: [logLine, ...state.logs].slice(0, 50) // Keep last 50
+            logs: [newEntry, ...state.logs].slice(0, 50) // Keep last 50
         }));
     }
 }
