@@ -137,3 +137,99 @@ async def get_product_catalog():
     """
     return simulation.get_product_catalog()
 
+
+
+# =============================================================================
+# AI AGENT SUPERVISOR & FATIGUE ENDPOINTS
+# =============================================================================
+
+@router.get("/operator_status")
+async def get_operator_status():
+    """
+    AI Agent API: Get current operator status including fatigue levels.
+    
+    Returns a list of operators with their current state:
+    - id: Operator ID
+    - name: Operator name
+    - status: Current status (idle, moving, working, on_break, etc.)
+    - fatigue: Fatigue level (0-100%)
+    - on_break: Whether operator is currently on break
+    - break_requested: Whether operator has requested a break
+    - x, y: Current position
+    """
+    return [{
+        "id": op["id"],
+        "name": op["name"],
+        "status": op["status"],
+        "current_action": op["current_action"],
+        "fatigue": op["fatigue"],
+        "on_break": op["on_break"],
+        "break_requested": op["break_requested"],
+        "x": op["x"],
+        "y": op["y"]
+    } for op in simulation.operators]
+
+
+class RequestBreakRequest(BaseModel):
+    """Request model for requesting an operator break."""
+    operator_id: str
+
+
+@router.post("/request_break")
+async def request_break(request: RequestBreakRequest):
+    """
+    AI Agent API: Request a break for a specific operator.
+    
+    The supervisor will be dispatched to relieve the operator if available.
+    
+    Args:
+        operator_id: The ID of the operator who needs a break
+    
+    Returns:
+        Status dict with result or error
+    """
+    operator = next((op for op in simulation.operators if op["id"] == request.operator_id), None)
+    
+    if not operator:
+        return {"success": False, "error": f"Operator {request.operator_id} not found"}
+    
+    if operator["on_break"]:
+        return {"success": False, "error": f"{operator['name']} is already on break"}
+    
+    if operator["break_requested"]:
+        return {"success": False, "error": f"{operator['name']} has already requested a break"}
+    
+    # Mark operator as requesting break
+    operator["break_requested"] = True
+    
+    return {
+        "success": True,
+        "message": f"Break requested for {operator['name']}. Supervisor will be dispatched.",
+        "operator": {
+            "id": operator["id"],
+            "name": operator["name"],
+            "fatigue": operator["fatigue"]
+        }
+    }
+
+
+@router.get("/supervisor_status")
+async def get_supervisor_status():
+    """
+    AI Agent API: Get current supervisor status.
+    
+    Returns supervisor state including:
+    - status: Current status (idle, moving_to_operator, relieving, returning)
+    - current_action: Description of current action
+    - assigned_operator_id: ID of operator being relieved (if any)
+    - x, y: Current position
+    """
+    return {
+        "id": simulation.supervisor["id"],
+        "name": simulation.supervisor["name"],
+        "status": simulation.supervisor["status"],
+        "current_action": simulation.supervisor["current_action"],
+        "assigned_operator_id": simulation.supervisor["assigned_operator_id"],
+        "x": simulation.supervisor["x"],
+        "y": simulation.supervisor["y"]
+    }

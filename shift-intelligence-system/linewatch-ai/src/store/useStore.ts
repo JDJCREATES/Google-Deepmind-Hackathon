@@ -35,6 +35,28 @@ export interface WarehouseInventory {
     [productType: string]: number;
 }
 
+export interface Supervisor {
+    id: string;
+    name: string;
+    x: number;
+    y: number;
+    status: string;
+    current_action: string;
+    assigned_operator_id: string | null;
+}
+
+export interface Operator {
+    id: string;
+    name: string;
+    x: number;
+    y: number;
+    status: string;
+    current_action: string;
+    fatigue: number;  // 0-100
+    on_break: boolean;
+    break_requested: boolean;
+}
+
 interface State {
     // Static Data
     layout: FloorLayout | null;
@@ -56,6 +78,10 @@ interface State {
     conveyorBoxes: Record<string, ConveyorBox>;
     warehouseInventory: WarehouseInventory;
     machineProductionState: Record<number, MachineProductionState>;
+    
+    // Live Data - Supervisor & Fatigue (NEW)
+    supervisor: Supervisor | null;
+    operators: Record<string, Operator>;
 
     // Actions
     fetchLayout: () => Promise<void>;
@@ -84,6 +110,10 @@ export const useStore = create<State>((set, get) => ({
     conveyorBoxes: {},
     warehouseInventory: {},
     machineProductionState: {},
+    
+    // Supervisor & Fatigue State (NEW)
+    supervisor: null,
+    operators: {},
 
     // =========================================================================
     // ACTIONS
@@ -129,6 +159,11 @@ export const useStore = create<State>((set, get) => ({
                     set(state => ({
                         activeOperators: {
                             ...state.activeOperators,
+                            [message.data.id]: message.data
+                        },
+                        // Also store in new operators state with fatigue data
+                        operators: {
+                            ...state.operators,
                             [message.data.id]: message.data
                         }
                     }));
@@ -216,6 +251,16 @@ export const useStore = create<State>((set, get) => ({
                 // Full warehouse inventory update
                 if (message.type === 'warehouse_inventory') {
                     set({ warehouseInventory: message.data });
+                    return;
+                }
+                
+                // =============================================================
+                // SUPERVISOR & FATIGUE UPDATES (NEW)
+                // =============================================================
+                
+                // Supervisor position and status update
+                if (message.type === 'supervisor_update') {
+                    set({ supervisor: message.data });
                     return;
                 }
                 

@@ -63,6 +63,123 @@ PRODUCT_CATALOG: Dict[str, Dict[str, Any]] = {
 }
 
 
+# =============================================================================
+# PATHFINDING SYSTEM
+# =============================================================================
+
+class PathfindingGrid:
+    """
+    Grid-based A* pathfinding for realistic operator movement.
+    
+    Discretizes the factory floor into a grid and uses A* to find paths
+    around obstacles (machines, equipment).
+    """
+    
+    def __init__(self, width: int, height: int, cell_size: int = 10):
+        """
+        Initialize pathfinding grid.
+        
+        Args:
+            width: Floor width in pixels
+            height: Floor height in pixels
+            cell_size: Size of each grid cell (smaller = more precise, slower)
+        """
+        self.width = width
+        self.height = height
+        self.cell_size = cell_size
+        self.grid_w = width // cell_size
+        self.grid_h = height // cell_size
+        self.obstacles: set = set()  # Set of (grid_x, grid_y) tuples
+        
+        logger.info(f"🗺️  PathfindingGrid initialized: {self.grid_w}x{self.grid_h} cells ({self.grid_w * self.grid_h} total)")
+    
+    def mark_obstacle(self, x: int, y: int, w: int, h: int):
+        """Mark a rectangular area as obstacle."""
+        # Convert to int in case floats are passed
+        x, y, w, h = int(x), int(y), int(w), int(h)
+        
+        for gx in range(x // self.cell_size, (x + w) // self.cell_size + 1):
+            for gy in range(y // self.cell_size, (y + h) // self.cell_size + 1):
+                if 0 <= gx < self.grid_w and 0 <= gy < self.grid_h:
+                    self.obstacles.add((gx, gy))
+    
+    def find_path(self, start_x: float, start_y: float, 
+                  end_x: float, end_y: float) -> List[tuple]:
+        """
+        A* pathfinding algorithm.
+        
+        Returns:
+            List of (x, y) waypoints in world coordinates, or empty list if no path
+        """
+        from heapq import heappush, heappop
+        
+        # Convert to grid coords
+        start = (int(start_x // self.cell_size), int(start_y // self.cell_size))
+        goal = (int(end_x // self.cell_size), int(end_y // self.cell_size))
+        
+        # Bounds check
+        if not (0 <= start[0] < self.grid_w and 0 <= start[1] < self.grid_h):
+            return []
+        if not (0 <= goal[0] < self.grid_w and 0 <= goal[1] < self.grid_h):
+            return []
+        
+        # Heuristic: Manhattan distance
+        def heuristic(a: tuple, b: tuple) -> float:
+            return abs(a[0] - b[0]) + abs(a[1] - b[1])
+        
+        # A* algorithm
+        frontier = []
+        heappush(frontier, (0, start))
+        came_from = {start: None}
+        cost_so_far = {start: 0}
+        
+        while frontier:
+            _, current = heappop(frontier)
+            
+            if current == goal:
+                break
+            
+            # 8-directional movement
+            for dx, dy in [(-1,0), (1,0), (0,-1), (0,1), 
+                          (-1,-1), (-1,1), (1,-1), (1,1)]:
+                next_pos = (current[0] + dx, current[1] + dy)
+                
+                # Bounds check
+                if not (0 <= next_pos[0] < self.grid_w and 
+                       0 <= next_pos[1] < self.grid_h):
+                    continue
+                
+                # Obstacle check
+                if next_pos in self.obstacles:
+                    continue
+                
+                # Cost (diagonal = 1.414, straight = 1)
+                move_cost = 1.414 if (dx != 0 and dy != 0) else 1.0
+                new_cost = cost_so_far[current] + move_cost
+                
+                if next_pos not in cost_so_far or new_cost < cost_so_far[next_pos]:
+                    cost_so_far[next_pos] = new_cost
+                    priority = new_cost + heuristic(next_pos, goal)
+                    heappush(frontier, (priority, next_pos))
+                    came_from[next_pos] = current
+        
+        # Reconstruct path
+        if goal not in came_from:
+            return []  # No path found
+        
+        path = []
+        current = goal
+        while current is not None:
+            # Convert back to world coords (center of cell)
+            wx = current[0] * self.cell_size + self.cell_size / 2
+            wy = current[1] * self.cell_size + self.cell_size / 2
+            path.append((wx, wy))
+            current = came_from[current]
+        
+        path.reverse()
+        return path
+
+
 class SimulationService:
     """
     Background service that simulates the manufacturing environment.
@@ -81,55 +198,102 @@ class SimulationService:
         self.canvas_height = self.layout["dimensions"]["height"]
         self.canvas_width = self.layout["dimensions"]["width"]
         
+        # =================================================================
+        # PATHFINDING GRID
+        # =================================================================
+        self.pathfinding = PathfindingGrid(
+            width=self.canvas_width,
+            height=self.canvas_height,
+            cell_size=10  # 10px cells for good balance
+        )
+        self._initialize_obstacles()
+        
+        # Production zone boundaries (where operators can walk)
+        warehouse_w = 80
+        breakroom_w = 100
+        maintenance_h = 50
+        self.production_zone = {
+            "x_min": warehouse_w + 50,
+            "x_max": self.canvas_width - breakroom_w - 20,
+            "y_min": maintenance_h + 20,
+            "y_max": self.canvas_height - 100
+        }
+        
         # Timing
         self.total_uptime_minutes = 0.0
+        self.simulation_hours = 0.0  # Track simulation time in hours
         
         # =================================================================
-        # MACHINE HEALTH (existing)
+        # 3-SHIFT SYSTEM
+        # =================================================================
+        self.current_shift = "A"  # A, B, or C
+        self.shift_elapsed_hours = 0.0
+        self.shift_duration_hours = 8.0  # 8-hour shifts
+        
+        # Define operator crews for each shift
+        self.shift_crews = {
+            "A": ["Alex", "Jordan", "Sam", "Casey", "Riley"],
+            "B": ["Morgan", "Taylor", "Jamie", "Avery", "Quinn"],
+            "C": ["Blake", "Drew", "Sage", "River", "Skylar"]
+        }
+        
+        # =================================================================
+        # MACHINE HEALTH
         # =================================================================
         self.line_health: Dict[int, float] = {
             i: 100.0 for i in range(1, settings.num_production_lines + 1)
         }
         
         # =================================================================
-        # PRODUCTION STATE (NEW)
+        # PRODUCTION STATE
         # =================================================================
         self.machine_production: Dict[int, Dict[str, Any]] = {}
         self._initialize_production_state()
         
         # =================================================================
-        # CONVEYOR BOXES (NEW)
+        # CONVEYOR BOXES
         # =================================================================
         self.conveyor_boxes: List[Dict[str, Any]] = []
         self.next_box_id = 1
         
         # =================================================================
-        # WAREHOUSE INVENTORY (NEW)
+        # WAREHOUSE INVENTORY
         # =================================================================
         self.warehouse_inventory: Dict[str, int] = {
             pt: 0 for pt in PRODUCT_CATALOG
         }
         
         # =================================================================
-        # OPERATORS (existing)
+        # OPERATORS (3-shift system)
         # =================================================================
-        self.operators: List[Dict[str, Any]] = []
-        for op in self.layout.get("operators", []):
-            self.operators.append({
-                "id": op["id"],
-                "name": op["name"],
-                "x": op["x"],
-                "y": op["y"],
-                "status": "idle",
-                "current_action": "monitoring",
-                "target_x": op["x"],
-                "target_y": op["y"]
-            })
+        self.all_operators: List[Dict[str, Any]] = []  # All 15 operators
+        self.operators: List[Dict[str, Any]] = []  # Currently active shift
+        self._initialize_all_operators()
+        
+        # =================================================================
+        # SUPERVISOR
+        # =================================================================
+        office_x = 100
+        office_y = 100
+        self.supervisor = {
+            "id": "SUP-01",
+            "name": "Supervisor",
+            "x": office_x,
+            "y": office_y,
+            "status": "idle",
+            "current_action": "monitoring",
+            "target_x": office_x,
+            "target_y": office_y,
+            "assigned_operator_id": None,
+            "path": [],
+            "path_index": 0
+        }
         
         # Cameras for detection logic
         self.cameras = self.layout.get("cameras", [])
         
         logger.info(f"🏭 SimulationService initialized with {len(self.machine_production)} production lines")
+        logger.info(f"👥 3-shift system: {len(self.all_operators)} total operators (5 per shift)")
     
     def _initialize_production_state(self):
         """Initialize production state for each machine line."""
@@ -167,6 +331,77 @@ class SimulationService:
                 "machine_w": line.get("machine_w", 22),
                 "machine_h": line.get("machine_h", 42),
             }
+    
+    def _initialize_obstacles(self):
+        """Mark machines and equipment as obstacles in the pathfinding grid."""
+        obstacle_count = 0
+        
+        # Mark all production line machines as obstacles
+        # REDUCED padding to ensure paths exist between machines
+        for line in self.layout.get("lines", []):
+            x = line["x"]
+            y = line["y"]
+            w = line.get("machine_w", 22)
+            h = line.get("machine_h", 42)
+            
+            # Reduced padding from 5 to 2 for tighter navigation
+            padding = 2
+            self.pathfinding.mark_obstacle(
+                x - padding, 
+                y - padding, 
+                w + 2 * padding, 
+                h + 2 * padding
+            )
+            obstacle_count += 1
+        
+        # Mark warehouse zone as obstacle
+        warehouse_w = 80
+        self.pathfinding.mark_obstacle(0, 0, warehouse_w, self.canvas_height)
+        obstacle_count += 1
+        
+        # Mark break room and offices as obstacles
+        breakroom_w = 100
+        self.pathfinding.mark_obstacle(
+            self.canvas_width - breakroom_w, 0, 
+            breakroom_w, self.canvas_height
+        )
+        obstacle_count += 1
+        
+        logger.info(f"🚧 Marked {obstacle_count} obstacles in pathfinding grid")
+    
+    def _initialize_all_operators(self):
+        """Initialize all 15 operators (5 per shift) and activate Shift A."""
+        # Get operator positions from layout
+        layout_ops = self.layout.get("operators", [])
+        
+        # Create all 15 operators
+        for shift_name, crew_names in self.shift_crews.items():
+            for i, name in enumerate(crew_names):
+                # Use layout positions, cycling through them
+                layout_op = layout_ops[i % len(layout_ops)]
+                
+                operator = {
+                    "id": f"op_{shift_name}_{i+1}",
+                    "name": name,
+                    "shift": shift_name,
+                    "x": layout_op["x"],
+                    "y": layout_op["y"],
+                    "status": "idle",
+                    "current_action": "monitoring",
+                    "target_x": layout_op["x"],
+                    "target_y": layout_op["y"],
+                    "fatigue": 0.0,
+                    "on_break": False,
+                    "break_requested": False,
+                    "path": [],
+                    "path_index": 0,
+                    "is_active": (shift_name == "A")  # Only Shift A starts active
+                }
+                self.all_operators.append(operator)
+        
+        # Set active operators to Shift A
+        self.operators = [op for op in self.all_operators if op["shift"] == "A"]
+        logger.info(f"👥 Initialized {len(self.all_operators)} operators, Shift A active ({len(self.operators)} operators)")
     
     def _reset_state(self):
         """Reset all production state (called on start)."""
@@ -241,8 +476,17 @@ class SimulationService:
     
     async def _tick(self):
         """Execute one simulation step."""
-        self.total_uptime_minutes += (self.tick_rate / 60) * settings.simulation_speed
+        # Update timing
+        tick_hours = (self.tick_rate / 3600) * settings.simulation_speed
+        self.total_uptime_minutes += tick_hours * 60
+        self.simulation_hours += tick_hours
+        self.shift_elapsed_hours += tick_hours
+        
         events: List[Dict[str, Any]] = []
+        
+        # 0. CHECK FOR SHIFT CHANGE
+        if self.shift_elapsed_hours >= self.shift_duration_hours:
+            await self._perform_shift_change(events)
         
         # 1. UPDATE LINE HEALTH (natural degradation)
         self._update_line_health(events)
@@ -253,25 +497,46 @@ class SimulationService:
         # 3. MOVE CONVEYOR BOXES
         await self._tick_conveyor(events)
         
-        # 4. MOVE OPERATORS
+        # 4. MOVE OPERATORS (with pathfinding)
         self._move_operators()
         
-        # 5. CHECK CAMERAS
+        # 5. ACCUMULATE OPERATOR FATIGUE
+        self._update_operator_fatigue()
+        
+        # 6. MOVE SUPERVISOR (relief logic)
+        self._move_supervisor()
+        
+        # 7. CHECK CAMERAS
         detections = self._check_cameras()
         events.extend(detections)
         
-        # 6. RANDOM ANOMALIES
+        # 8. RANDOM ANOMALIES
         if random.random() < (settings.event_probability_breakdown / 5):
             events.append(self._generate_breakdown())
         
         if random.random() < (settings.event_probability_safety_violation / 5):
             events.append(self._trigger_safety_violation())
         
-        # 7. BROADCAST OPERATOR UPDATES
+        # 9. BROADCAST OPERATOR UPDATES (only active operators)
         for op in self.operators:
-            events.append({"type": "operator_update", "data": op})
+            if op.get("is_active", True):
+                events.append({"type": "operator_update", "data": op})
         
-        # 8. BROADCAST WAREHOUSE INVENTORY (periodic)
+        # 10. BROADCAST SUPERVISOR UPDATE
+        events.append({"type": "supervisor_update", "data": self.supervisor})
+        
+        # 11. BROADCAST SHIFT INFO
+        events.append({
+            "type": "shift_status",
+            "data": {
+                "current_shift": self.current_shift,
+                "shift_hours_elapsed": round(self.shift_elapsed_hours, 2),
+                "shift_hours_remaining": round(self.shift_duration_hours - self.shift_elapsed_hours, 2),
+                "total_simulation_hours": round(self.simulation_hours, 2)
+            }
+        })
+        
+        # 12. BROADCAST WAREHOUSE INVENTORY (periodic)
         events.append({
             "type": "warehouse_inventory",
             "data": self.warehouse_inventory.copy()
@@ -281,10 +546,11 @@ class SimulationService:
         for event in events:
             await manager.broadcast(event)
             
-            # Auto-trigger investigation for critical events
-            event_data = event.get("data", {})
-            if event_data.get("severity") in ["HIGH", "CRITICAL"]:
-                asyncio.create_task(self._trigger_investigation(event_data))
+            # Auto-trigger investigation for critical events (ONLY if simulation is running)
+            if self.is_running:
+                event_data = event.get("data", {})
+                if event_data.get("severity") in ["HIGH", "CRITICAL"]:
+                    asyncio.create_task(self._trigger_investigation(event_data))
     
     # =========================================================================
     # PRODUCTION LOGIC
@@ -534,45 +800,201 @@ class SimulationService:
     # =========================================================================
     
     def _move_operators(self):
-        """Update operator positions towards their targets."""
+        """Update operator positions using A* pathfinding."""
         speed = 50.0  # pixels per second
         
         for op in self.operators:
-            target_x, target_y = op["target_x"], op["target_y"]
-            dx = target_x - op["x"]
-            dy = target_y - op["y"]
-            dist = math.sqrt(dx * dx + dy * dy)
+            # Skip inactive operators
+            if not op.get("is_active", True) or op.get("on_break", False):
+                continue
             
-            if dist < speed:
-                # Arrived
-                op["x"] = target_x
-                op["y"] = target_y
-                if op["status"] == "moving":
-                    op["status"] = "working"
-            else:
-                # Move towards target
-                op["x"] += (dx / dist) * speed
-                op["y"] += (dy / dist) * speed
-                op["status"] = "moving"
-            
-            # Transition from working to idle
-            if op["status"] in ["working", "monitoring"]:
-                if random.random() < 0.2:
-                    op["status"] = "idle"
-                    op["current_action"] = "idle"
-            
-            # Pick new target if idle
-            if op["status"] == "idle" and random.random() < 0.3:
-                if self.layout["lines"]:
-                    targets = [
-                        (random.uniform(50, 1100), random.uniform(320, 420)),
-                        (self.layout["lines"][random.randint(0, len(self.layout["lines"]) - 1)]["x"], 380)
-                    ]
-                    tx, ty = random.choice(targets)
-                    op["target_x"] = tx
-                    op["target_y"] = ty
+            # If operator has a path, follow it
+            if op["path"] and op["path_index"] < len(op["path"]):
+                waypoint_x, waypoint_y = op["path"][op["path_index"]]
+                dx = waypoint_x - op["x"]
+                dy = waypoint_y - op["y"]
+                dist = math.sqrt(dx * dx + dy * dy)
+                
+                if dist < speed * self.tick_rate:
+                    # Reached waypoint
+                    op["x"] = waypoint_x
+                    op["y"] = waypoint_y
+                    op["path_index"] += 1
+                    
+                    # Check if reached final destination
+                    if op["path_index"] >= len(op["path"]):
+                        op["status"] = "working"
+                        op["path"] = []
+                        op["path_index"] = 0
+                else:
+                    # Move towards waypoint
+                    op["x"] += (dx / dist) * speed * self.tick_rate
+                    op["y"] += (dy / dist) * speed * self.tick_rate
                     op["status"] = "moving"
-                    op["current_action"] = "patrolling"
+            else:
+                # No active path - operator is stationary
+                # Transition from working to idle
+                if op["status"] in ["working", "monitoring"]:
+                    if random.random() < 0.1:  # Reduced frequency
+                        op["status"] = "idle"
+                        op["current_action"] = "idle"
+                
+                # Pick new target if idle (with pathfinding)
+                if op["status"] == "idle" and random.random() < 0.2:  # Reduced frequency
+                    # Generate random target within production zone
+                    target_x = random.uniform(
+                        self.production_zone["x_min"],
+                        self.production_zone["x_max"]
+                    )
+                    target_y = random.uniform(
+                        self.production_zone["y_min"],
+                        self.production_zone["y_max"]
+                    )
+                    
+                    # Calculate path using A*
+                    path = self.pathfinding.find_path(
+                        op["x"], op["y"],
+                        target_x, target_y
+                    )
+                    
+                    if path:
+                        op["path"] = path
+                        op["path_index"] = 0
+                        op["target_x"] = target_x
+                        op["target_y"] = target_y
+                        op["status"] = "moving"
+                        op["current_action"] = "patrolling"
+                    # If no path found, stay in place
+    
+    def _update_operator_fatigue(self):
+        """Accumulate operator fatigue and handle break requests."""
+        FATIGUE_RATE = 0.5  # Fatigue points per tick (1 second)
+        FATIGUE_THRESHOLD = 80.0  # Request break at 80%
+        BREAK_RECOVERY_RATE = 2.0  # Fatigue recovery per tick on break
+        
+        for op in self.operators:
+            if op["on_break"]:
+                # Recover fatigue while on break
+                op["fatigue"] = max(0.0, op["fatigue"] - BREAK_RECOVERY_RATE)
+                
+                # End break when fully recovered
+                if op["fatigue"] <= 0:
+                    op["on_break"] = False
+                    op["break_requested"] = False
+                    op["status"] = "idle"
+                    op["current_action"] = "returning_from_break"
+                    logger.info(f"👷 {op['name']} has returned from break")
+            else:
+                # Accumulate fatigue while working
+                op["fatigue"] = min(100.0, op["fatigue"] + FATIGUE_RATE)
+                
+                # Request break if fatigued
+                if op["fatigue"] >= FATIGUE_THRESHOLD and not op["break_requested"]:
+                    op["break_requested"] = True
+                    logger.info(f"😓 {op['name']} is requesting a break (fatigue: {op['fatigue']:.1f}%)")
+    
+    def _move_supervisor(self):
+        """Handle supervisor movement and operator relief logic."""
+        speed = 60.0  # Supervisor moves slightly faster
+        
+        # Check if any operator needs relief
+        if self.supervisor["status"] == "idle":
+            for op in self.operators:
+                if op["break_requested"] and not op["on_break"]:
+                    # Assign supervisor to relieve this operator
+                    self.supervisor["assigned_operator_id"] = op["id"]
+                    self.supervisor["status"] = "moving_to_operator"
+                    self.supervisor["current_action"] = f"relieving_{op['name']}"
+                    
+                    # Calculate path to operator
+                    path = self.pathfinding.find_path(
+                        self.supervisor["x"],
+                        self.supervisor["y"],
+                        op["x"],
+                        op["y"]
+                    )
+                    
+                    if path:
+                        self.supervisor["path"] = path
+                        self.supervisor["path_index"] = 0
+                        logger.info(f"👔 Supervisor dispatched to relieve {op['name']}")
+                    else:
+                        logger.warning(f"⚠️  No path found for supervisor to {op['name']}")
+                    break
+        
+        # Move supervisor along path
+        if self.supervisor["status"] == "moving_to_operator" and self.supervisor["path"]:
+            path = self.supervisor["path"]
+            idx = self.supervisor["path_index"]
+            
+            if idx < len(path):
+                target_x, target_y = path[idx]
+                dx = target_x - self.supervisor["x"]
+                dy = target_y - self.supervisor["y"]
+                dist = math.sqrt(dx * dx + dy * dy)
+                
+                if dist < speed:
+                    # Reached waypoint
+                    self.supervisor["x"] = target_x
+                    self.supervisor["y"] = target_y
+                    self.supervisor["path_index"] += 1
+                    
+                    # Check if reached final destination
+                    if self.supervisor["path_index"] >= len(path):
+                        # Arrived at operator
+                        self._relieve_operator()
+                else:
+                    # Move towards waypoint
+                    self.supervisor["x"] += (dx / dist) * speed
+                    self.supervisor["y"] += (dy / dist) * speed
+    
+    def _relieve_operator(self):
+        """Relieve an operator and send them on break."""
+        op_id = self.supervisor["assigned_operator_id"]
+        operator = next((op for op in self.operators if op["id"] == op_id), None)
+        
+        if operator:
+            # Send operator on break
+            operator["on_break"] = True
+            operator["status"] = "on_break"
+            operator["current_action"] = "resting"
+            logger.info(f"✅ Supervisor relieved {operator['name']}, now on break")
+            
+            # Supervisor returns to office
+            office_x = 100
+            office_y = 100
+            path = self.pathfinding.find_path(
+                self.supervisor["x"],
+                self.supervisor["y"],
+                office_x,
+                office_y
+            )
+            
+            if path:
+                self.supervisor["path"] = path
+                self.supervisor["path_index"] = 0
+                self.supervisor["status"] = "returning"
+                self.supervisor["current_action"] = "returning_to_office"
+            else:
+                # Fallback: teleport back
+                self.supervisor["x"] = office_x
+                self.supervisor["y"] = office_y
+                self.supervisor["status"] = "idle"
+                self.supervisor["current_action"] = "monitoring"
+            
+            self.supervisor["assigned_operator_id"] = None
+        
+        # Handle supervisor returning to office
+        if self.supervisor["status"] == "returning" and self.supervisor["path"]:
+            path = self.supervisor["path"]
+            idx = self.supervisor["path_index"]
+            
+            if idx >= len(path):
+                # Arrived back at office
+                self.supervisor["status"] = "idle"
+                self.supervisor["current_action"] = "monitoring"
+                self.supervisor["path"] = []
+                self.supervisor["path_index"] = 0
     
     # =========================================================================
     # CAMERAS (existing logic)
@@ -633,15 +1055,25 @@ class SimulationService:
         if line_id in self.machine_production:
             self.machine_production[line_id]["is_running"] = False
         
-        # Dispatch nearest operator
+        # Dispatch nearest operator using pathfinding
         target_line = next((l for l in self.layout["lines"] if l["id"] == line_id), None)
         if target_line and self.operators:
             best_op = min(self.operators, 
                          key=lambda o: math.hypot(o["x"] - target_line["x"], o["y"] - target_line["y"]))
-            best_op["target_x"] = target_line["x"]
-            best_op["target_y"] = target_line["y"]
-            best_op["status"] = "moving"
-            best_op["current_action"] = f"Fixing Line {line_id}"
+            
+            # Use pathfinding to navigate to the machine
+            path = self.pathfinding.find_path(
+                best_op["x"], best_op["y"],
+                target_line["x"], target_line["y"]
+            )
+            
+            if path:
+                best_op["path"] = path
+                best_op["path_index"] = 0
+                best_op["target_x"] = target_line["x"]
+                best_op["target_y"] = target_line["y"]
+                best_op["status"] = "moving"
+                best_op["current_action"] = f"Fixing Line {line_id}"
         
         return {
             "type": "visual_signal",
@@ -661,10 +1093,20 @@ class SimulationService:
         
         op = random.choice(self.operators)
         line = random.choice(self.layout["lines"])
-        op["target_x"] = line["x"]
-        op["target_y"] = line["y"]
-        op["status"] = "moving"
-        op["current_action"] = "VIOLATION"
+        
+        # Use pathfinding even for violations (they'll still trigger alerts)
+        path = self.pathfinding.find_path(
+            op["x"], op["y"],
+            line["x"], line["y"]
+        )
+        
+        if path:
+            op["path"] = path
+            op["path_index"] = 0
+            op["target_x"] = line["x"]
+            op["target_y"] = line["y"]
+            op["status"] = "moving"
+            op["current_action"] = "VIOLATION"
         
         return {
             "type": "visual_signal",
@@ -677,9 +1119,19 @@ class SimulationService:
         }
     
     async def _trigger_investigation(self, event_data: dict):
-        """Run hypothesis market for a critical event."""
+        """Run hypothesis market for a critical event (only if simulation is running)."""
+        # CRITICAL FIX: Check if simulation is still running before starting investigation
+        if not self.is_running:
+            logger.debug("Skipping investigation - simulation is stopped")
+            return
+        
         try:
             from app.graphs.hypothesis_market import run_hypothesis_market
+            
+            # Double-check before broadcasting
+            if not self.is_running:
+                return
+            
             await manager.broadcast({
                 "type": "agent_thought",
                 "data": {
@@ -688,6 +1140,8 @@ class SimulationService:
                     "timestamp": datetime.now().isoformat()
                 }
             })
+            
+            # Pass simulation reference to allow checking if still running
             await run_hypothesis_market(
                 signal_id=f"sim-{int(datetime.now().timestamp())}",
                 signal_type=event_data.get("type", "UNKNOWN"),
@@ -695,7 +1149,53 @@ class SimulationService:
                 signal_data=event_data
             )
         except Exception as e:
-            logger.error(f"Failed to trigger investigation: {e}")
+            # Suppress errors if simulation stopped during investigation
+            if self.is_running:
+                logger.error(f"Failed to trigger investigation: {e}")
+    
+    async def _perform_shift_change(self, events: List[Dict[str, Any]]):
+        """Perform shift change: deactivate current shift, activate next shift."""
+        # Determine next shift
+        shift_order = ["A", "B", "C"]
+        current_index = shift_order.index(self.current_shift)
+        next_shift = shift_order[(current_index + 1) % 3]
+        
+        logger.info(f"🔄 SHIFT CHANGE: {self.current_shift} → {next_shift}")
+        
+        # Deactivate current shift operators
+        for op in self.operators:
+            op["is_active"] = False
+            op["status"] = "off_duty"
+        
+        # Activate next shift operators
+        self.current_shift = next_shift
+        self.operators = [op for op in self.all_operators if op["shift"] == next_shift]
+        
+        # Reset new shift operators
+        for op in self.operators:
+            op["is_active"] = True
+            op["fatigue"] = 0.0  # Fresh operators
+            op["on_break"] = False
+            op["break_requested"] = False
+            op["status"] = "idle"
+            op["current_action"] = "starting_shift"
+            op["path"] = []
+            op["path_index"] = 0
+        
+        # Reset shift timer
+        self.shift_elapsed_hours = 0.0
+        
+        # Broadcast shift change event
+        events.append({
+            "type": "shift_change",
+            "data": {
+                "new_shift": next_shift,
+                "operator_names": [op["name"] for op in self.operators],
+                "timestamp": datetime.now().isoformat()
+            }
+        })
+        
+        logger.info(f"✅ Shift {next_shift} now active: {[op['name'] for op in self.operators]}")
     
     async def inject_event(self, event_type: str, severity: str = "HIGH"):
         """Manually inject an event (for demos/testing)."""

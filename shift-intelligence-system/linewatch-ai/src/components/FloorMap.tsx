@@ -121,6 +121,9 @@ const FloorMap: React.FC = () => {
         conveyorBoxes,
         warehouseInventory,
         machineProductionState,
+        // Supervisor & Fatigue (NEW)
+        supervisor,
+        operators: operatorsWithFatigue,
     } = useStore();
     
     const containerRef = useRef<HTMLDivElement>(null);
@@ -263,6 +266,22 @@ const FloorMap: React.FC = () => {
                     {liveOperators?.map((op: OperatorData) => (
                         <OperatorComp key={op.id} operator={op} />
                     ))}
+                    
+                    {/* Fatigue Bars (NEW) - Render above operators */}
+                    {Object.values(operatorsWithFatigue).map((op) => (
+                        <FatigueBar 
+                            key={`fatigue-${op.id}`} 
+                            x={op.x} 
+                            y={op.y} 
+                            fatigue={op.fatigue} 
+                            onBreak={op.on_break} 
+                        />
+                    ))}
+                    
+                    {/* Supervisor (NEW) */}
+                    {supervisor && (
+                        <SupervisorComp supervisor={supervisor} />
+                    )}
 
                     {/* Cameras */}
                     {liveCameras?.map((cam: CameraData) => (
@@ -597,6 +616,168 @@ const OperatorComp: React.FC<{ operator: OperatorData }> = ({ operator }) => {
             <Circle radius={10} fill={fillColor} opacity={0.7} stroke={fillColor} strokeWidth={2} shadowColor={fillColor} shadowBlur={8} shadowOpacity={0.5} />
             <Circle radius={3} fill="#FFF" opacity={0.9} />
             <Text text={operator.name} fontSize={8} fontFamily="Inter, sans-serif" fill="#E2E8F0" y={16} x={-20} width={40} align="center" />
+        </Group>
+    );
+};
+
+// =============================================================================
+// SUPERVISOR COMPONENT (NEW)
+// =============================================================================
+
+interface SupervisorCompProps {
+    supervisor: {
+        id: string;
+        name: string;
+        x: number;
+        y: number;
+        status: string;
+        current_action: string;
+    };
+}
+
+const SupervisorComp: React.FC<SupervisorCompProps> = ({ supervisor }) => {
+    // Distinct color scheme for supervisor
+    const statusColors: Record<string, string> = {
+        'idle': '#8B5CF6',  // Purple
+        'moving_to_operator': '#F59E0B',  // Amber
+        'relieving': '#10B981',  // Green
+        'returning': '#0EA5E9',  // Blue
+    };
+    
+    const fillColor = statusColors[supervisor.status] || '#8B5CF6';
+    
+    return (
+        <Group x={supervisor.x} y={supervisor.y}>
+            {/* Outer ring to distinguish from operators */}
+            <Circle 
+                radius={14} 
+                stroke={fillColor} 
+                strokeWidth={2} 
+                opacity={0.6}
+            />
+            {/* Main body */}
+            <Circle 
+                radius={10} 
+                fill={fillColor} 
+                opacity={0.9} 
+                stroke="#FFF" 
+                strokeWidth={1}
+                shadowColor={fillColor} 
+                shadowBlur={10} 
+                shadowOpacity={0.7} 
+            />
+            {/* Icon indicator (S for Supervisor) */}
+            <Text 
+                text="S" 
+                fontSize={10} 
+                fontFamily="Inter, sans-serif" 
+                fontStyle="bold"
+                fill="#FFF" 
+                x={-4} 
+                y={-5} 
+            />
+            {/* Name label */}
+            <Text 
+                text={supervisor.name} 
+                fontSize={8} 
+                fontFamily="Inter, sans-serif" 
+                fill="#E2E8F0" 
+                y={18} 
+                x={-25} 
+                width={50} 
+                align="center" 
+            />
+        </Group>
+    );
+};
+
+// =============================================================================
+// FATIGUE BAR COMPONENT (NEW)
+// =============================================================================
+
+interface FatigueBarProps {
+    x: number;
+    y: number;
+    fatigue: number;  // 0-100
+    onBreak: boolean;
+}
+
+const FatigueBar: React.FC<FatigueBarProps> = ({ x, y, fatigue, onBreak }) => {
+    // Don't show bar if on break
+    if (onBreak) {
+        return (
+            <Group x={x} y={y - 20}>
+                <Rect
+                    x={-15}
+                    y={0}
+                    width={30}
+                    height={12}
+                    fill="#0EA5E9"
+                    cornerRadius={2}
+                    opacity={0.8}
+                />
+                <Text
+                    text="BREAK"
+                    fontSize={7}
+                    fontFamily="Inter, sans-serif"
+                    fontStyle="bold"
+                    fill="#FFF"
+                    x={-15}
+                    y={2}
+                    width={30}
+                    align="center"
+                />
+            </Group>
+        );
+    }
+    
+    // Color based on fatigue level
+    const getColor = (level: number) => {
+        if (level < 40) return '#10B981';  // Green - fresh
+        if (level < 70) return '#F59E0B';  // Amber - getting tired
+        return '#EF4444';  // Red - exhausted
+    };
+    
+    const barWidth = 30;
+    const barHeight = 4;
+    const fillWidth = (fatigue / 100) * barWidth;
+    const color = getColor(fatigue);
+    
+    return (
+        <Group x={x} y={y - 18}>
+            {/* Background */}
+            <Rect
+                x={-barWidth / 2}
+                y={0}
+                width={barWidth}
+                height={barHeight}
+                fill="#1E293B"
+                cornerRadius={2}
+                stroke="#475569"
+                strokeWidth={0.5}
+            />
+            {/* Fill */}
+            <Rect
+                x={-barWidth / 2}
+                y={0}
+                width={fillWidth}
+                height={barHeight}
+                fill={color}
+                cornerRadius={2}
+            />
+            {/* Percentage text (only if > 50%) */}
+            {fatigue > 50 && (
+                <Text
+                    text={`${Math.round(fatigue)}%`}
+                    fontSize={6}
+                    fontFamily="Inter, sans-serif"
+                    fill="#E2E8F0"
+                    x={-barWidth / 2}
+                    y={-8}
+                    width={barWidth}
+                    align="center"
+                />
+            )}
         </Group>
     );
 };
