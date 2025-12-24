@@ -4,7 +4,7 @@ Master Orchestrator - Central coordinator for all specialized agents.
 This agent uses Gemini 3's deepest reasoning (Level 3) to make complex decisions,
 resolve conflicts between agents, and escalate to humans when needed.
 """
-from typing import Dict, Any
+from typing import Dict, Any, List
 from datetime import datetime
 
 from app.agents.base import BaseAgent

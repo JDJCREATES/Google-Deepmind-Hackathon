@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     
     # Gemini 3 API Configuration
     google_api_key: str | None = None
-    gemini_model: str = "gemini-3.0-flash-exp"  # Gemini 3.0 Flash (experimental)
+    gemini_model: str = "gemini-3-flash-preview"  # Gemini 3 Flash Preview
     
     # FastAPI Configuration
     frontend_url: str = "http://localhost:5173"

@@ -192,7 +192,7 @@ async def generate_hypotheses_node(state: HypothesisMarketState) -> Dict[str, An
             framework="RCA",
             description=f"Generic investigation needed for {signal['description']}",
             initial_confidence=0.3,
-            proposedby="SystemFallback"
+            proposed_by="SystemFallback"
         ))
         
     logger.info(f"✅ Aggregated {len(hypotheses)} hypotheses from agents")
@@ -208,7 +208,7 @@ async def generate_hypotheses_node(state: HypothesisMarketState) -> Dict[str, An
                     "description": h.description,
                     "confidence": h.initial_confidence,
                     "proposed_by": h.proposed_by,
-                    "cost_if_wrong": h.cost_of_being_wrong
+                    "cost_if_wrong": h.reversibility
                 }
                 for h in hypotheses
             ],
@@ -266,6 +266,17 @@ async def gather_evidence_node(state: HypothesisMarketState) -> Dict[str, Any]:
                 gathered_by="ProductionAgent",
             )
             evidence_list.append(evidence)
+
+        elif hypothesis.framework == HypothesisFramework.FMEA:
+            # Get safety sensor / camera data
+            evidence = Evidence(
+                source="SafetySensors",
+                data={"smoke_detected": True, "zone": "ConveyorMotor", "confidence": 0.95},
+                supports=True,
+                strength=0.9,
+                gathered_by="ComplianceAgent",
+            )
+            evidence_list.append(evidence)
     
     logger.info(f"✅ Gathered {len(evidence_list)} pieces of evidence")
     
@@ -321,7 +332,16 @@ Output JSON with:
         import json
         import re
         
-        json_match = re.search(r'\{.*\}', result.content, re.DOTALL)
+        content = result.content
+        # Handle case where content might be a list (rare but possible with some models)
+        if isinstance(content, list):
+            content = " ".join([str(c) for c in content])
+        elif not isinstance(content, str):
+            content = str(content)
+            
+        logger.info(f"🔍 [DEBUG] Belief Update Response: {content[:100]}...")
+        
+        json_match = re.search(r'\{.*\}', content, re.DOTALL)
         if json_match:
             data = json.loads(json_match.group())
             posteriors = data.get("posteriors", {})

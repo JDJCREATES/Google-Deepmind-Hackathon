@@ -44,7 +44,7 @@ class GeminiVisionService:
         self._validate_api_key()
         
         self.model = ChatGoogleGenerativeAI(
-            model="gemini-3.0-flash-exp",
+            model="gemini-3-flash-preview",
             google_api_key=settings.google_api_key,
             temperature=0.3,  # Lower temp for consistent analysis
         )
@@ -52,7 +52,7 @@ class GeminiVisionService:
         self._analysis_cache: Dict[str, Any] = {}
         self._thought_signatures: List[Dict[str, Any]] = []
         
-        logger.info("✅ GeminiVisionService initialized with gemini-3.0-flash-exp")
+        logger.info("✅ GeminiVisionService initialized with gemini-3-flash-preview")
     
     def _validate_api_key(self):
         """Ensure API key is configured."""
@@ -312,7 +312,7 @@ Provide:
             "timestamp": datetime.now().isoformat(),
             "prompt_hash": hashlib.sha256(prompt.encode()).hexdigest()[:16],
             "response_length": len(content),
-            "model": "gemini-3.0-flash-exp",
+            "model": "gemini-3-flash-preview",
         }
         
         self._thought_signatures.append(signature)

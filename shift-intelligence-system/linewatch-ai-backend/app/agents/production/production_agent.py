@@ -76,16 +76,16 @@ class ProductionAgent(BaseAgent):
         signal_desc = signal.get('description', '')
         
         # RCA Hypothesis: Equipment failure
-        if 'throughput' in signal_desc.lower() or 'stopped' in signal_desc:
+        if any(w in signal_desc.lower() for w in ['throughput', 'stopped', 'smoke', 'fire', 'failure']):
             hypotheses.append(create_hypothesis(
                 framework=HypothesisFramework.RCA,
                 hypothesis_id=f"H-PROD-{uuid4().hex[:6]}",
                 description=f"Equipment failure on line causing {signal_desc}",
-                initial_confidence=0.6,
-                impact=8.0,
-                urgency=9.0,
+                initial_confidence=0.9 if 'smoke' in signal_desc.lower() else 0.6,
+                impact=10.0 if 'smoke' in signal_desc.lower() else 8.0,
+                urgency=10.0 if 'smoke' in signal_desc.lower() else 9.0,
                 proposed_by=self.agent_name,
-                recommended_action="Run diagnostic subagent",
+                recommended_action="Emergency shutdown and diagnostic",
                 target_agent="ProductionAgent"
             ))
             

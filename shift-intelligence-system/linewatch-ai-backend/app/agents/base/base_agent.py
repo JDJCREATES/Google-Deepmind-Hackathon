@@ -20,7 +20,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, System
 from langchain_core.tools import BaseTool
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import create_react_agent
-from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.checkpoint.memory import MemorySaver
 
 from app.config import settings
 from app.utils.logging import get_agent_logger
@@ -88,24 +88,19 @@ class BaseAgent(ABC):
         self.logger = get_agent_logger(agent_name)
         
         # Gemini 3 LLM with thinking configuration
-        model_name = "gemini-3.0-flash-exp" if use_flash_model else "gemini-3.0-pro-exp"
+        model_name = "gemini-3-flash-preview" if use_flash_model else "gemini-3-pro-preview"
         self.llm = ChatGoogleGenerativeAI(
             model=model_name,
             google_api_key=settings.google_api_key,
             temperature=0.7,
-            # Gemini 3 specific: Enable thinking mode
-            extra_kwargs={
-                "thinking_level": thinking_level,
-                "include_thoughts": True,  # Get reasoning traces
-            }
         )
         
-        # LangGraph agent with checkpointing
-        self.checkpointer = SqliteSaver.from_conn_string("linewatch_state.db")
+        # LangGraph agent with in-memory checkpointing
+        self.checkpointer = MemorySaver()
         self.agent = create_react_agent(
             self.llm,
             tools=self.tools,
-            state_modifier=self.system_prompt,
+            prompt=self.system_prompt,
             checkpointer=self.checkpointer,
         )
         

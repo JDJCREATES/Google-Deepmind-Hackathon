@@ -59,16 +59,18 @@ class MaintenanceAgent(BaseAgent):
         signal_desc = signal.get('description', '')
         
         # FMEA: Predictive failure
-        if 'vibration' in signal_desc.lower() or 'noise' in signal_desc:
+        if any(w in signal_desc.lower() for w in ['vibration', 'noise', 'smoke', 'fire', 'overheat']):
+            hs_desc = "Bearing wear leading to potential seizure" if 'vibration' in signal_desc.lower() else "Critical component failure detection"
+            
             hypotheses.append(create_hypothesis(
                 framework=HypothesisFramework.FMEA,
                 hypothesis_id=f"H-MAINT-{uuid4().hex[:6]}",
-                description="Bearing wear leading to potential seizure",
-                initial_confidence=0.75,
-                impact=6.0,
-                urgency=5.0,
+                description=hs_desc,
+                initial_confidence=0.8 if 'smoke' in signal_desc.lower() else 0.75,
+                impact=9.0 if 'smoke' in signal_desc.lower() else 6.0,
+                urgency=10.0 if 'smoke' in signal_desc.lower() else 5.0,
                 proposed_by=self.agent_name,
-                recommended_action="Schedule maintenance in next window",
+                recommended_action="Emergency maintenance stop" if 'smoke' in signal_desc.lower() else "Schedule maintenance in next window",
                 target_agent="MaintenanceAgent"
             ))
             

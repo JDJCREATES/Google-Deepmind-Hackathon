@@ -64,14 +64,21 @@ export const useStore = create<State>((set, get) => ({
     
     toggleSimulation: async () => {
         try {
+            console.log('[DEBUG] toggleSimulation called');
             const status = await api.simulation.getStatus();
+            console.log('[DEBUG] Current simulation status:', status);
+            
             if (status.running) {
+                console.log('[DEBUG] Calling stop...');
                 await api.simulation.stop();
+                console.log('[DEBUG] Stop call complete');
             } else {
+                console.log('[DEBUG] Calling start...');
                 await api.simulation.start();
+                console.log('[DEBUG] Start call complete');
             }
         } catch(e) { 
-            console.error('Failed to toggle simulation:', e);
+            console.error('[DEBUG] Failed to toggle simulation:', e);
         }
     }
 }));
@@ -79,11 +86,14 @@ export const useStore = create<State>((set, get) => ({
 function handleIncomingMessage(set: any, get: any, msg: any) {
     const timestamp = new Date().toLocaleTimeString();
     
-    // FILTER: Skip noisy messages from the log stream
-    const NOISY_TYPES = ['line_status', 'simulation_tick'];
+    // ===== PRIORITY: Show ONLY Agent Reasoning & AI Thinking =====
+    // Filter OUT all simulation/input data - we want to showcase the AI, not the fake data
     
+    const AGENT_TYPES = ['agent_thought', 'agent_decision', 'agent_reasoning', 'hypothesis', 'evidence', 'belief', 'action'];
+    const SYSTEM_TYPES = ['system_alert', 'system_status'];
+    
+    // Silently update line health without logging
     if (msg.type === 'line_status') {
-         // Update line health silently (no log)
          const { layout } = get();
          if (layout) {
              const updatedLines = layout.lines.map((l: Line) => {
@@ -94,23 +104,50 @@ function handleIncomingMessage(set: any, get: any, msg: any) {
              });
              set({ layout: { ...layout, lines: updatedLines } });
          }
-         return; // Don't add to logs
+         return; // Don't log
     }
     
-    if (msg.type === 'simulation_tick') {
-        return; // Skip tick messages entirely
+    // HIDE all simulation noise (input data, ticks, events)
+    const SIMULATION_NOISE = [
+        'simulation_tick', 
+        'simulation_event',
+        'line_update',
+        'production_signal',
+        'sensor_data',
+        'system_status'  // Hide system status updates
+    ];
+    
+    if (SIMULATION_NOISE.includes(msg.type)) {
+        return; // Skip entirely
     }
     
-    // Build log line for interesting messages
-    let logLine = `[${timestamp}] ${msg.type}`;
+    // Build log line for AGENT REASONING ONLY
+    let logLine = '';
     
-    if (msg.data?.description) {
-        logLine += `: ${msg.data.description}`;
-    } else if (msg.data?.source) {
-        logLine += ` from ${msg.data.source}`;
+    // Highlight agent thoughts with clear prefix
+    if (AGENT_TYPES.includes(msg.type)) {
+        const agentName = msg.data?.source || 'Agent';
+        logLine = `[${timestamp}] 🤖 ${agentName}: ${msg.data?.description || msg.type}`;
+    } 
+    // System alerts (critical only)
+    else if (SYSTEM_TYPES.includes(msg.type)) {
+        logLine = `[${timestamp}] ⚙️ SYSTEM: ${msg.data?.description || msg.type}`;
+    }
+    // Default: mark as unfiltered but show
+    else {
+        logLine = `[${timestamp}] ${msg.type}`;
+        if (msg.data?.description) {
+            logLine += `: ${msg.data.description}`;
+        } else if (msg.data?.source) {
+            logLine += ` from ${msg.data.source}`;
+        }
     }
     
-    set((state: any) => ({
-        logs: [logLine, ...state.logs].slice(0, 30) // Keep last 30
-    }));
+    // Only add to logs if we built a line
+    if (logLine) {
+        set((state: any) => ({
+            logs: [logLine, ...state.logs].slice(0, 50) // Keep last 50
+        }));
+    }
 }
+

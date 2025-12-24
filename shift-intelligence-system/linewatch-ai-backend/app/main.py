@@ -18,7 +18,7 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 LineWatch AI Backend starting...")
     logger.info(f"📊 Department: {settings.department_name}")
     logger.info(f"🏭 Production Lines: {settings.num_production_lines}")
-    logger.info(f"🤖 Gemini Model: {settings.gemini_model}")
+    logger.info(f"🤖 Gemini Model: {settings.gemini_model}")  # Using gemini-3-flash-preview
     
     # STRICT API KEY CHECK - System will not work without it
     if not settings.google_api_key:

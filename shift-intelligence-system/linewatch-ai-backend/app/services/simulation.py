@@ -39,8 +39,8 @@ class SimulationService:
             return
             
         self.is_running = True
-        logger.info("🎬 Simulation Service STARTED")
         self.sim_task = asyncio.create_task(self._run_loop())
+        logger.info("🎬 Simulation Service STARTED")
         
         await manager.broadcast({
             "type": "system_status",
@@ -50,6 +50,7 @@ class SimulationService:
     async def stop(self):
         """Stop the simulation loop."""
         self.is_running = False
+        
         if self.sim_task:
             self.sim_task.cancel()
             try:
@@ -98,12 +99,15 @@ class SimulationService:
             
         # 2. Random Anomalies (Chance based on config)
         if random.random() < settings.event_probability_breakdown:
+            logger.info("⏱️ Generating breakdown event")
             events.append(self._generate_breakdown())
             
         if random.random() < settings.event_probability_safety_violation:
+            logger.info("⏱️ Generating safety violation event")
             events.append(self._generate_safety_violation())
             
         if random.random() < settings.event_probability_bottleneck:
+            logger.info("⏱️ Generating bottleneck event")
             events.append(self._generate_bottleneck())
 
         # 3. Broadcast All Events and Check for Critical Incidents
@@ -111,15 +115,12 @@ class SimulationService:
             # Broadcast the event to frontend
             await manager.broadcast(event)
             
-            # AUTO-TRIGGER INVESTIGATION
-            # If critical, start the hypothesis market
+            # AUTO-TRIGGER INVESTIGATION if critical
             event_data = event.get("data", {})
             severity = event_data.get("severity", "LOW")
             
             if severity in ["HIGH", "CRITICAL"]:
                 logger.info(f"🚨 Critical Event Detected: {event_data.get('description')} - Triggering Investigation")
-                
-                # Run in background to not block simulation loop
                 asyncio.create_task(self._trigger_investigation(event_data))
 
     async def _trigger_investigation(self, event_data: dict):
@@ -197,34 +198,37 @@ class SimulationService:
         logger.info(f"📉 SIMULATION: {msg['data']['description']}")
         return msg
         
-    async def inject_event(self, event_type: str, severity: str = "HIGH") -> Dict[str, Any]:
-        """Manually inject an event (e.g., from UI)."""
+    async def inject_event(self, event_type: str, severity: str = "HIGH"):
+        """Manually inject an event (for demos/testing)."""
         logger.info(f"💉 Injecting manual event: {event_type}")
         
         if event_type == "fire":
-             event = self._generate_breakdown()
-        elif event_type == "fatigue":
-             event = {
-                "type": "visual_signal",
-                "data": {
-                    "source": "Camera_BreakRoom",
-                    "description": "Multiple operators showing signs of high fatigue",
-                    "severity": severity,
-                    "timestamp": datetime.now().isoformat()
-                }
-             }
+            event = self._generate_breakdown()
+        elif event_type == "safety":
+            event = self._generate_safety_violation()
+        elif event_type == "bottleneck":
+            event = self._generate_bottleneck()
         else:
-             event = {
-                "type": "system_alert",
+            event = {
+                "type": "custom_event",
                 "data": {
-                    "source": "Manual_Injection",
-                    "description": f"Manual test event: {event_type}",
+                    "description": f"Custom event: {event_type}",
                     "severity": severity,
                     "timestamp": datetime.now().isoformat()
                 }
-             }
+            }
              
+        # Broadcast the event
         await manager.broadcast(event)
+        
+        # TRIGGER INVESTIGATION if critical
+        event_data = event.get("data", {})
+        event_severity = event_data.get("severity", "LOW")
+        
+        if event_severity in ["HIGH", "CRITICAL"]:
+            logger.info(f"🚨 Injected Critical Event: {event_data.get('description')} - Triggering Investigation")
+            asyncio.create_task(self._trigger_investigation(event_data))
+        
         return event
 
 # Global instance

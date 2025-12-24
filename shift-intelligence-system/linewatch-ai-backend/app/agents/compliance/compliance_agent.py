@@ -4,7 +4,7 @@ Compliance Agent - Monitors safety violations and regulatory compliance.
 This agent uses Gemini 3's reasoning to analyze safety violations from camera feeds,
 ensure temperature/hygiene compliance, and manage incident response.
 """
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 from app.agents.base import BaseAgent
 from app.prompts.compliance.system import COMPLIANCE_AGENT_SYSTEM_PROMPT
@@ -87,16 +87,16 @@ class ComplianceAgent(BaseAgent):
             ))
             
         # FMEA Hypothesis: Safety Risk
-        if 'guard' in signal_desc.lower() or 'ppe' in signal_desc or 'safety' in signal_desc:
+        if any(w in signal_desc.lower() for w in ['guard', 'ppe', 'safety', 'smoke', 'fire']):
             hypotheses.append(create_hypothesis(
                 framework=HypothesisFramework.FMEA,
                 hypothesis_id=f"H-FMEA-{uuid4().hex[:6]}",
-                description="High severity failure mode activated (Safety)",
-                initial_confidence=0.7,
-                impact=9.0,
-                urgency=8.0,
+                description="High severity failure mode activated (Safety Threat)",
+                initial_confidence=0.9 if 'smoke' in signal_desc.lower() else 0.7,
+                impact=10.0 if 'smoke' in signal_desc.lower() else 9.0,
+                urgency=10.0 if 'smoke' in signal_desc.lower() else 8.0,
                 proposed_by=self.agent_name,
-                recommended_action="Suspend line operation immediately",
+                recommended_action="Evacuate and suspend line operation",
                 target_agent="ProductionAgent"
             ))
             
