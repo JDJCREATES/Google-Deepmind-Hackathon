@@ -44,6 +44,7 @@ const HierarchicalAgentGraph: React.FC = () => {
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
     const [thoughtBubbles, setThoughtBubbles] = useState<ThoughtBubbleData[]>([]);
+    const [agentTokens, setAgentTokens] = useState<Record<string, {input: number, output: number}>>({});
     const { logs } = useStore();
 
     // Extract agent-specific logs for thought streams
@@ -100,6 +101,8 @@ const HierarchicalAgentGraph: React.FC = () => {
         const handleMessage = (event: MessageEvent) => {
             try {
                 const message = JSON.parse(event.data);
+                
+                // Handle thought bubbles
                 if (message.type === 'agent_thinking') {
                     const { agent, thought } = message.data;
                     const bubbleId = `bubble-${Date.now()}-${Math.random()}`;
@@ -110,6 +113,18 @@ const HierarchicalAgentGraph: React.FC = () => {
                         text: thought,
                         timestamp: Date.now()
                     }]);
+                }
+                
+                // Handle token stats
+                if (message.type === 'agent_stats_update') {
+                    const { agent, input_tokens, output_tokens } = message.data;
+                    setAgentTokens(prev => ({
+                        ...prev,
+                        [agent]: {
+                            input: input_tokens,
+                            output: output_tokens
+                        }
+                    }));
                 }
             } catch (e) {
                 // Ignore parse errors
@@ -142,6 +157,8 @@ const HierarchicalAgentGraph: React.FC = () => {
                     status: activeAgent === 'orchestrator' ? 'Deliberating' : 'Idle',
                     thoughts: agentThoughts.orchestrator,
                     isActive: activeAgent === 'orchestrator',
+                    inputTokens: agentTokens.orchestrator?.input || 0,
+                    outputTokens: agentTokens.orchestrator?.output || 0,
                 },
             },
             {
@@ -155,6 +172,8 @@ const HierarchicalAgentGraph: React.FC = () => {
                     status: activeAgent === 'production' ? 'Analyzing' : 'Ready',
                     thoughts: agentThoughts.production,
                     isActive: activeAgent === 'production',
+                    inputTokens: agentTokens.production?.input || 0,
+                    outputTokens: agentTokens.production?.output || 0,
                 },
             },
             {
@@ -168,6 +187,8 @@ const HierarchicalAgentGraph: React.FC = () => {
                     status: activeAgent === 'compliance' ? 'Checking' : 'Ready',
                     thoughts: agentThoughts.compliance,
                     isActive: activeAgent === 'compliance',
+                    inputTokens: agentTokens.compliance?.input || 0,
+                    outputTokens: agentTokens.compliance?.output || 0,
                 },
             },
             {
@@ -181,6 +202,8 @@ const HierarchicalAgentGraph: React.FC = () => {
                     status: activeAgent === 'staffing' ? 'Scheduling' : 'Ready',
                     thoughts: agentThoughts.staffing,
                     isActive: activeAgent === 'staffing',
+                    inputTokens: agentTokens.staffing?.input || 0,
+                    outputTokens: agentTokens.staffing?.output || 0,
                 },
             },
             {
@@ -194,12 +217,14 @@ const HierarchicalAgentGraph: React.FC = () => {
                     status: activeAgent === 'maintenance' ? 'Inspecting' : 'Ready',
                     thoughts: agentThoughts.maintenance,
                     isActive: activeAgent === 'maintenance',
+                    inputTokens: agentTokens.maintenance?.input || 0,
+                    outputTokens: agentTokens.maintenance?.output || 0,
                 },
             },
         ];
 
         setNodes(agentNodes);
-    }, [agentThoughts, activeAgent]);
+    }, [agentThoughts, activeAgent, agentTokens]);
 
     // Initialize edges (Hub & Spoke from Orchestrator)
     useEffect(() => {

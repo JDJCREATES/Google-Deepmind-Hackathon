@@ -103,10 +103,10 @@ const AgentActivityLog: React.FC = () => {
             </div>
             
             {/* Column Headers */}
-            <div className="hidden lg:flex items-center gap-2 px-4 py-2 bg-stone-900/50 border-b border-stone-800 text-xs font-semibold text-stone-500 uppercase tracking-wider shrink-0">
-                <div className="w-24 shrink-0">Time/Agent</div>
-                <div className="w-24 shrink-0">Phase</div>
-                <div className="flex-1 min-w-0">Event Details</div>
+            <div className="hidden lg:flex items-center gap-3 px-3 py-2 bg-stone-900/50 border-b border-stone-800 text-[10px] font-semibold text-stone-500 uppercase tracking-wider shrink-0">
+                <div className="w-28 shrink-0">Time/Agent</div>
+                <div className="w-16 shrink-0">Phase</div>
+                <div className="flex-1">Event Details</div>
             </div>
             
             {/* Events List */}
@@ -129,22 +129,22 @@ const AgentActivityLog: React.FC = () => {
                                 className={`border-l-4 ${meta.color} border-b border-stone-800/50 hover:bg-stone-800/40 transition-colors`}
                             >
                                 <div
-                                    className="px-4 py-3 cursor-pointer group"
+                                    className="px-3 py-2 cursor-pointer group"
                                     onClick={() => hasDetails && toggleExpand(entry.id)}
                                 >
                                     {/* Desktop Layout */}
-                                    <div className="hidden lg:flex items-start gap-2">
+                                    <div className="hidden lg:flex items-start gap-3">
                                         {/* Time & Agent */}
-                                        <div className="w-24 shrink-0 min-w-0">
-                                            <div className="text-xs text-stone-500 font-mono mb-0.5">{entry.timestamp}</div>
-                                            <div className="text-xs font-bold text-stone-300 truncate" title={entry.source}>
+                                        <div className="w-28 shrink-0">
+                                            <div className="text-[9px] text-stone-500 font-mono mb-0.5">{entry.timestamp}</div>
+                                            <div className="text-[10px] font-bold text-stone-300 truncate" title={entry.source}>
                                                 {entry.source || 'System'}
                                             </div>
                                         </div>
                                         
                                         {/* Phase Badge */}
-                                        <div className="w-24 shrink-0">
-                                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-stone-900/50 text-stone-400 border border-stone-800`}>
+                                        <div className="w-16 shrink-0">
+                                            <span className={`inline-flex items-center px-1 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-stone-900/50 text-stone-400 border border-stone-800`}>
                                                 {meta.phase}
                                             </span>
                                         </div>
@@ -152,16 +152,16 @@ const AgentActivityLog: React.FC = () => {
                                         {/* Content */}
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-start gap-2">
-                                                <div className="mt-0.5 shrink-0 opacity-80 group-hover:opacity-100 transition-opacity">
+                                                <div className="mt-0.5 shrink-0 opacity-80 group-hover:opacity-100 transition-opacity text-xs">
                                                     {meta.icon}
                                                 </div>
                                                 <div className="flex-1 min-w-0">
-                                                    <div className="text-sm text-stone-200 font-medium leading-tight break-words">
+                                                    <div className="text-xs text-stone-200 font-medium leading-relaxed">
                                                         {entry.description}
                                                     </div>
                                                     
                                                     {hasDetails && (
-                                                        <div className="mt-1 flex items-center gap-1 text-[10px] text-stone-500 font-medium uppercase tracking-wide group-hover:text-amber-500/80 transition-colors">
+                                                        <div className="mt-1 flex items-center gap-1 text-[9px] text-stone-500 font-medium uppercase tracking-wide group-hover:text-amber-500/80 transition-colors">
                                                             {isExpanded ? <FaChevronDown /> : <FaChevronRight />}
                                                             {isExpanded ? 'Hide Details' : 'View Details'}
                                                         </div>

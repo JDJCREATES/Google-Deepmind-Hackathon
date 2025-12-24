@@ -110,6 +110,10 @@ class BaseAgent(ABC):
         # Decision history
         self.decisions: List[Decision] = []
         
+        # Token usage tracking
+        self.total_input_tokens = 0
+        self.total_output_tokens = 0
+        
         self.logger.info(f"✅ {agent_name} initialized with Gemini 3 ({model_name})")
     
     async def _broadcast_thought(self, message: str, message_type: str = "agent_activity"):
@@ -139,6 +143,46 @@ class BaseAgent(ABC):
                 })
         except Exception:
             pass  # Don't fail if websocket is down
+
+    async def _track_tokens(self, result: Any):
+        """Track token usage from LLM response and broadcast stats."""
+        try:
+            # Extract token usage from response metadata
+            # For LangChain/Gemini, usage is in response_metadata
+            messages = result.get("messages", [])
+            if messages:
+                last_message = messages[-1]
+                usage = getattr(last_message, 'response_metadata', {}).get('usage', {})
+                
+                input_tokens = usage.get('prompt_tokens', 0) or usage.get('input_tokens', 0)
+                output_tokens = usage.get('completion_tokens', 0) or usage.get('output_tokens', 0)
+                
+                if input_tokens or output_tokens:
+                    self.total_input_tokens += input_tokens
+                    self.total_output_tokens += output_tokens
+                    
+                    # Broadcast updated stats
+                    from app.services.websocket import manager
+                    
+                    # Normalize agent name for frontend
+                    agent_id = self.agent_name.replace("Agent", "").replace("Master", "").lower()
+                    if agent_id == "orchestrator":
+                        agent_id = "orchestrator"
+                    
+                    await manager.broadcast({
+                        "type": "agent_stats_update",
+                        "data": {
+                            "agent": agent_id,
+                            "input_tokens": self.total_input_tokens,
+                            "output_tokens": self.total_output_tokens,
+                            "timestamp": datetime.now().isoformat()
+                        }
+                    })
+                    
+                    self.logger.debug(f"📊 Token stats: {agent_id} - In: {self.total_input_tokens}, Out: {self.total_output_tokens}")
+        except Exception as e:
+            self.logger.debug(f"Failed to track tokens: {e}")
+            pass  # Non-critical, don't fail reasoning
 
     # ========== REASONING PHASE ==========
     
@@ -174,6 +218,9 @@ class BaseAgent(ABC):
                 }
             }
         )
+        
+        # Track token usage
+        await self._track_tokens(result)
         
         # Extract Gemini 3's thoughts and reasoning
         thoughts = self._extract_thoughts(result)

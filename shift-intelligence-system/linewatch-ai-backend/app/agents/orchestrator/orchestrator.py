@@ -121,7 +121,13 @@ class MasterOrchestrator(BaseAgent):
         
         leading = belief_state.get_leading_hypothesis()
         confidence = belief_state.confidence_in_leader
-        evidence_summary = "\n".join([f"- {e.description} ({'Supports' if e.supports else 'Refutes'})" for e in getattr(belief_state, 'hypotheses', [])])
+        
+        # Get evidence from belief_state
+        evidence_list = getattr(belief_state, 'evidence', [])
+        evidence_summary = "\n".join([
+            f"- {e.source}: {'Supports' if e.supports else 'Refutes'}" 
+            for e in evidence_list
+        ]) if evidence_list else "No evidence gathered yet"
         
         prompt = f"""
         You are the Master Orchestrator and Final Judge.

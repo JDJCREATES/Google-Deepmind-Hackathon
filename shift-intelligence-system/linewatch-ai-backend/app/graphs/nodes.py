@@ -341,8 +341,7 @@ async def gather_evidence_node(state: HypothesisMarketState) -> Dict[str, Any]:
             },
             supports=sim_result["supports"],
             strength=0.85 if sim_result["supports"] else 0.4,
-            gathered_by=agent_name,
-            description=f"Tool '{tool_name}' returned: {sim_result.get('status', 'Done')}"
+            gathered_by=agent_name
         )
         evidence_list.append(evidence)
         

@@ -11,6 +11,8 @@ interface RichAgentNodeProps {
         thoughts?: string[];
         activeTool?: string;
         isActive?: boolean;
+        inputTokens?: number;
+        outputTokens?: number;
     };
 }
 
@@ -147,9 +149,18 @@ const RichAgentNode: React.FC<RichAgentNodeProps> = memo(({ data }) => {
                         </span>
                     </div>
 
-                    {/* Status Pill */}
-                    {data.status && (
-                        <div className="mt-2 flex justify-center">
+                    {/* Token Stats Row */}
+                    <div className="mt-2 flex items-center justify-between gap-1 px-1">
+                        {/* Input Tokens */}
+                        <div className="flex items-center gap-0.5">
+                            <span className="text-[10px] text-blue-400">↑</span>
+                            <span className="text-[10px] font-mono text-blue-300 font-semibold">
+                                {data.inputTokens ? (data.inputTokens >= 1000 ? `${(data.inputTokens / 1000).toFixed(1)}K` : data.inputTokens) : '0'}
+                            </span>
+                        </div>
+
+                        {/* Status Pill (Center) */}
+                        {data.status && (
                             <span
                                 className="px-2 py-0.5 rounded-full text-[9px] font-semibold uppercase tracking-wide transition-all duration-500"
                                 style={{
@@ -160,8 +171,16 @@ const RichAgentNode: React.FC<RichAgentNodeProps> = memo(({ data }) => {
                             >
                                 {data.status}
                             </span>
+                        )}
+
+                        {/* Output Tokens */}
+                        <div className="flex items-center gap-0.5">
+                            <span className="text-[10px] text-green-400">↓</span>
+                            <span className="text-[10px] font-mono text-green-300 font-semibold">
+                                {data.outputTokens ? (data.outputTokens >= 1000 ? `${(data.outputTokens / 1000).toFixed(1)}K` : data.outputTokens) : '0'}
+                            </span>
                         </div>
-                    )}
+                    </div>
 
                     {/* Thought Stream (Last thought) */}
                     {data.thoughts && data.thoughts.length > 0 && (
