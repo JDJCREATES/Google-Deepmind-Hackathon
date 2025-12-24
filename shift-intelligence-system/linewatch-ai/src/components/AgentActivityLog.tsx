@@ -103,10 +103,10 @@ const AgentActivityLog: React.FC = () => {
             </div>
             
             {/* Column Headers */}
-            <div className="hidden lg:grid grid-cols-12 gap-2 px-4 py-2 bg-stone-900/50 border-b border-stone-800 text-xs font-semibold text-stone-500 uppercase tracking-wider shrink-0">
-                <div className="col-span-3">Time/Agent</div>
-                <div className="col-span-3">Phase</div>
-                <div className="col-span-6">Event Details</div>
+            <div className="hidden lg:flex items-center gap-2 px-4 py-2 bg-stone-900/50 border-b border-stone-800 text-xs font-semibold text-stone-500 uppercase tracking-wider shrink-0">
+                <div className="w-24 shrink-0">Time/Agent</div>
+                <div className="w-24 shrink-0">Phase</div>
+                <div className="flex-1 min-w-0">Event Details</div>
             </div>
             
             {/* Events List */}
@@ -133,9 +133,9 @@ const AgentActivityLog: React.FC = () => {
                                     onClick={() => hasDetails && toggleExpand(entry.id)}
                                 >
                                     {/* Desktop Layout */}
-                                    <div className="hidden lg:grid grid-cols-12 gap-3 items-start">
+                                    <div className="hidden lg:flex items-start gap-2">
                                         {/* Time & Agent */}
-                                        <div className="col-span-3 min-w-0">
+                                        <div className="w-24 shrink-0 min-w-0">
                                             <div className="text-xs text-stone-500 font-mono mb-0.5">{entry.timestamp}</div>
                                             <div className="text-xs font-bold text-stone-300 truncate" title={entry.source}>
                                                 {entry.source || 'System'}
@@ -143,20 +143,20 @@ const AgentActivityLog: React.FC = () => {
                                         </div>
                                         
                                         {/* Phase Badge */}
-                                        <div className="col-span-3">
+                                        <div className="w-24 shrink-0">
                                             <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-stone-900/50 text-stone-400 border border-stone-800`}>
                                                 {meta.phase}
                                             </span>
                                         </div>
                                         
                                         {/* Content */}
-                                        <div className="col-span-6">
+                                        <div className="flex-1 min-w-0">
                                             <div className="flex items-start gap-2">
                                                 <div className="mt-0.5 shrink-0 opacity-80 group-hover:opacity-100 transition-opacity">
                                                     {meta.icon}
                                                 </div>
                                                 <div className="flex-1 min-w-0">
-                                                    <div className="text-sm text-stone-200 font-medium leading-tight">
+                                                    <div className="text-sm text-stone-200 font-medium leading-tight break-words">
                                                         {entry.description}
                                                     </div>
                                                     
