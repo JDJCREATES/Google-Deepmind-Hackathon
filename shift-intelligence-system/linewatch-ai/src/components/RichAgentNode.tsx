@@ -1,7 +1,6 @@
 import React, { memo } from 'react';
 import { Handle, Position } from 'reactflow';
-import { FaRobot, FaCog, FaHardHat, FaUserShield, FaUsers, FaWrench, FaIndustry, FaBrain } from 'react-icons/fa';
-import { MdOutlineSmartToy } from 'react-icons/md';
+import { FaCog, FaUserShield, FaUsers, FaWrench, FaIndustry, FaBrain } from 'react-icons/fa';
 
 interface RichAgentNodeProps {
     data: {
@@ -46,12 +45,17 @@ const agentConfig: Record<string, { icon: React.ReactNode; color: string; eyeCol
 const RichAgentNode: React.FC<RichAgentNodeProps> = memo(({ data }) => {
     const config = agentConfig[data.type] || agentConfig.production;
     const isActive = data.isActive;
+    const isOrchestrator = data.type === 'orchestrator';
+
+    // Orchestrator always full opacity, domain agents dull when idle
+    const nodeOpacity = isOrchestrator ? 1 : (isActive ? 1 : 0.5);
 
     return (
         <div
-            className={`relative transition-all duration-300 ${isActive ? 'scale-105' : ''}`}
+            className={`relative transition-all duration-500 ${isActive ? 'scale-105' : ''}`}
             style={{
                 filter: isActive ? `drop-shadow(0 0 20px ${config.color})` : 'none',
+                opacity: nodeOpacity,
             }}
         >
             {/* Connection Handles */}
@@ -66,18 +70,21 @@ const RichAgentNode: React.FC<RichAgentNodeProps> = memo(({ data }) => {
                 {/* Antenna */}
                 <div className="flex flex-col items-center mb-1">
                     <div
-                        className="w-2.5 h-2.5 rounded-full animate-pulse"
-                        style={{ backgroundColor: config.color }}
+                        className={`w-2.5 h-2.5 rounded-full ${(isActive || isOrchestrator) ? 'animate-pulse' : ''}`}
+                        style={{ 
+                            backgroundColor: (isActive || isOrchestrator) ? config.color : '#44403C',
+                            opacity: (isActive || isOrchestrator) ? 1 : 0.3
+                        }}
                     />
                     <div className="w-0.5 h-3 bg-stone-600" />
                 </div>
 
                 {/* Head (Main Body) */}
                 <div
-                    className="relative rounded-2xl p-3 border-2"
+                    className="relative rounded-2xl p-3 border-2 transition-all duration-500"
                     style={{
                         backgroundColor: '#1C1917',
-                        borderColor: config.color,
+                        borderColor: (isActive || isOrchestrator) ? config.color : config.color + '40',
                         minWidth: 130,
                     }}
                 >
@@ -85,37 +92,57 @@ const RichAgentNode: React.FC<RichAgentNodeProps> = memo(({ data }) => {
                     <div className="flex justify-center gap-4 mb-2">
                         {/* Left Eye */}
                         <div
-                            className="w-5 h-5 rounded-full border-2 flex items-center justify-center"
-                            style={{ borderColor: config.eyeColor, backgroundColor: '#0C0A09' }}
+                            className="w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all duration-500"
+                            style={{ 
+                                borderColor: (isActive || isOrchestrator) ? config.eyeColor : '#292524',
+                                backgroundColor: '#0C0A09',
+                                boxShadow: (isActive || isOrchestrator) ? `0 0 8px ${config.eyeColor}` : 'none'
+                            }}
                         >
                             <div
-                                className={`w-2 h-2 rounded-full ${isActive ? 'animate-pulse' : ''}`}
-                                style={{ backgroundColor: config.eyeColor }}
+                                className={`w-2 h-2 rounded-full transition-all duration-500 ${(isActive || isOrchestrator) ? 'animate-pulse' : ''}`}
+                                style={{ 
+                                    backgroundColor: (isActive || isOrchestrator) ? config.eyeColor : '#1C1917',
+                                    opacity: (isActive || isOrchestrator) ? 1 : 0.2
+                                }}
                             />
                         </div>
                         {/* Right Eye */}
                         <div
-                            className="w-5 h-5 rounded-full border-2 flex items-center justify-center"
-                            style={{ borderColor: config.eyeColor, backgroundColor: '#0C0A09' }}
+                            className="w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all duration-500"
+                            style={{ 
+                                borderColor: (isActive || isOrchestrator) ? config.eyeColor : '#292524',
+                                backgroundColor: '#0C0A09',
+                                boxShadow: (isActive || isOrchestrator) ? `0 0 8px ${config.eyeColor}` : 'none'
+                            }}
                         >
                             <div
-                                className={`w-2 h-2 rounded-full ${isActive ? 'animate-pulse' : ''}`}
-                                style={{ backgroundColor: config.eyeColor }}
+                                className={`w-2 h-2 rounded-full transition-all duration-500 ${(isActive || isOrchestrator) ? 'animate-pulse' : ''}`}
+                                style={{ 
+                                    backgroundColor: (isActive || isOrchestrator) ? config.eyeColor : '#1C1917',
+                                    opacity: (isActive || isOrchestrator) ? 1 : 0.2
+                                }}
                             />
                         </div>
                     </div>
 
                     {/* Agent Icon (Mouth/Badge Area) */}
                     <div
-                        className="flex justify-center items-center py-1.5 rounded-lg mb-2"
-                        style={{ backgroundColor: config.color + '30' }}
+                        className="flex justify-center items-center py-1.5 rounded-lg mb-2 transition-all duration-500"
+                        style={{ 
+                            backgroundColor: (isActive || isOrchestrator) ? config.color + '30' : '#1C191730',
+                            opacity: (isActive || isOrchestrator) ? 1 : 0.5
+                        }}
                     >
-                        <span style={{ color: config.color }}>{config.icon}</span>
+                        <span style={{ color: (isActive || isOrchestrator) ? config.color : '#57534E' }}>{config.icon}</span>
                     </div>
 
                     {/* Agent Name */}
                     <div className="text-center">
-                        <span className="text-[11px] font-bold text-stone-200 uppercase tracking-wider">
+                        <span 
+                            className="text-[11px] font-bold uppercase tracking-wider transition-all duration-500"
+                            style={{ color: (isActive || isOrchestrator) ? '#E7E5E4' : '#78716C' }}
+                        >
                             {data.label}
                         </span>
                     </div>
@@ -124,11 +151,11 @@ const RichAgentNode: React.FC<RichAgentNodeProps> = memo(({ data }) => {
                     {data.status && (
                         <div className="mt-2 flex justify-center">
                             <span
-                                className="px-2 py-0.5 rounded-full text-[9px] font-semibold uppercase tracking-wide"
+                                className="px-2 py-0.5 rounded-full text-[9px] font-semibold uppercase tracking-wide transition-all duration-500"
                                 style={{
-                                    backgroundColor: config.color + '40',
-                                    color: config.color,
-                                    border: `1px solid ${config.color}`,
+                                    backgroundColor: (isActive || isOrchestrator) ? config.color + '40' : '#1C191740',
+                                    color: (isActive || isOrchestrator) ? config.color : '#57534E',
+                                    border: `1px solid ${(isActive || isOrchestrator) ? config.color : '#44403C'}`,
                                 }}
                             >
                                 {data.status}
@@ -156,8 +183,14 @@ const RichAgentNode: React.FC<RichAgentNodeProps> = memo(({ data }) => {
 
                 {/* Neck/Base */}
                 <div className="flex justify-center gap-2 mt-1">
-                    <div className="w-3 h-1.5 rounded-sm bg-stone-700" />
-                    <div className="w-3 h-1.5 rounded-sm bg-stone-700" />
+                    <div 
+                        className="w-3 h-1.5 rounded-sm transition-all duration-500" 
+                        style={{ backgroundColor: (isActive || isOrchestrator) ? '#57534E' : '#292524' }}
+                    />
+                    <div 
+                        className="w-3 h-1.5 rounded-sm transition-all duration-500"
+                        style={{ backgroundColor: (isActive || isOrchestrator) ? '#57534E' : '#292524' }}
+                    />
                 </div>
             </div>
         </div>

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import ReactFlow, {
     Background,
     useNodesState,
@@ -9,6 +9,7 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 import { useStore, type LogEntry } from '../store/useStore';
 import RichAgentNode from './RichAgentNode';
+import ThoughtBubble from './ThoughtBubble';
 
 // Register custom node types
 const nodeTypes = {
@@ -24,9 +25,25 @@ const POSITIONS = {
     maintenance: { x: 240, y: 140 },
 };
 
+const agentColors: Record<string, string> = {
+    orchestrator: '#F59E0B',
+    production: '#3B82F6',
+    compliance: '#10B981',
+    staffing: '#8B5CF6',
+    maintenance: '#EF4444',
+};
+
+interface ThoughtBubbleData {
+    id: string;
+    agentId: string;
+    text: string;
+    timestamp: number;
+}
+
 const HierarchicalAgentGraph: React.FC = () => {
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+    const [thoughtBubbles, setThoughtBubbles] = useState<ThoughtBubbleData[]>([]);
     const { logs } = useStore();
 
     // Extract agent-specific logs for thought streams
@@ -77,6 +94,39 @@ const HierarchicalAgentGraph: React.FC = () => {
         if (source.includes('maintenance')) return 'maintenance';
         return null;
     }, [logs]);
+
+    // Listen for agent_thinking WebSocket events
+    useEffect(() => {
+        const handleMessage = (event: MessageEvent) => {
+            try {
+                const message = JSON.parse(event.data);
+                if (message.type === 'agent_thinking') {
+                    const { agent, thought } = message.data;
+                    const bubbleId = `bubble-${Date.now()}-${Math.random()}`;
+                    
+                    setThoughtBubbles(prev => [...prev, {
+                        id: bubbleId,
+                        agentId: agent,
+                        text: thought,
+                        timestamp: Date.now()
+                    }]);
+                }
+            } catch (e) {
+                // Ignore parse errors
+            }
+        };
+
+        // Access the WebSocket from useStore
+        const ws = (window as any).__agentWebSocket;
+        if (ws) {
+            ws.addEventListener('message', handleMessage);
+            return () => ws.removeEventListener('message', handleMessage);
+        }
+    }, []);
+
+    const removeBubble = (id: string) => {
+        setThoughtBubbles(prev => prev.filter(b => b.id !== id));
+    };
 
     // Initialize nodes
     useEffect(() => {
@@ -158,19 +208,57 @@ const HierarchicalAgentGraph: React.FC = () => {
             { id: 'e-orch-comp', source: 'orchestrator', target: 'compliance' },
             { id: 'e-orch-staff', source: 'orchestrator', target: 'staffing' },
             { id: 'e-orch-maint', source: 'orchestrator', target: 'maintenance' },
-        ].map((e) => ({
-            ...e,
-            type: 'smoothstep',
-            animated: activeAgent !== null,
-            style: { stroke: '#4B5563', strokeWidth: 2 },
-            markerEnd: { type: MarkerType.ArrowClosed, color: '#4B5563', width: 16, height: 16 },
-        }));
+        ].map((e) => {
+            const isTargetActive = activeAgent === e.target;
+            return {
+                ...e,
+                type: 'smoothstep',
+                animated: isTargetActive,
+                style: { 
+                    stroke: isTargetActive ? '#F59E0B' : '#374151', 
+                    strokeWidth: isTargetActive ? 3 : 2,
+                    opacity: isTargetActive ? 1 : 0.3,
+                },
+                markerEnd: { 
+                    type: MarkerType.ArrowClosed, 
+                    color: isTargetActive ? '#F59E0B' : '#374151', 
+                    width: isTargetActive ? 18 : 14, 
+                    height: isTargetActive ? 18 : 14 
+                },
+            };
+        });
 
         setEdges(hubEdges);
     }, [activeAgent]);
 
     return (
-        <div style={{ width: '100%', height: '100%' }}>
+        <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+            {/* Thought Bubbles Layer */}
+            {thoughtBubbles.map((bubble) => {
+                const position = POSITIONS[bubble.agentId as keyof typeof POSITIONS];
+                if (!position) return null;
+
+                return (
+                    <div
+                        key={bubble.id}
+                        style={{
+                            position: 'absolute',
+                            left: `calc(50% + ${position.x}px)`,
+                            top: `calc(50% + ${position.y - 80}px)`,
+                            transform: 'translate(-50%, -50%)',
+                            zIndex: 1000,
+                        }}
+                    >
+                        <ThoughtBubble
+                            id={bubble.id}
+                            text={bubble.text}
+                            agentColor={agentColors[bubble.agentId] || '#6B7280'}
+                            onComplete={removeBubble}
+                        />
+                    </div>
+                );
+            })}
+
             <ReactFlow
                 nodes={nodes}
                 edges={edges}

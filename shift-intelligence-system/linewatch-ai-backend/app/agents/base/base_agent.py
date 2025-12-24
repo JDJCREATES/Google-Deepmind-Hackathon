@@ -112,10 +112,12 @@ class BaseAgent(ABC):
         
         self.logger.info(f"✅ {agent_name} initialized with Gemini 3 ({model_name})")
     
-    async def _broadcast_thought(self, message: str, message_type: str = "agent_thought"):
-        """Broadcast a thought to the frontend via WebSocket."""
+    async def _broadcast_thought(self, message: str, message_type: str = "agent_activity"):
+        """Broadcast agent thought/activity to frontend via WebSocket."""
         try:
             from app.services.websocket import manager
+            
+            # Send both the legacy format and new structured format
             await manager.broadcast({
                 "type": message_type,
                 "data": {
@@ -124,6 +126,17 @@ class BaseAgent(ABC):
                     "timestamp": datetime.now().isoformat()
                 }
             })
+            
+            # Also send as agent_thinking for thought bubbles
+            if message_type == "agent_activity":
+                await manager.broadcast({
+                    "type": "agent_thinking",
+                    "data": {
+                        "agent": self.agent_name.replace("Agent", "").lower(),
+                        "thought": message,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                })
         except Exception:
             pass  # Don't fail if websocket is down
 
@@ -624,7 +637,7 @@ Needs: Higher-level coordination or human decision
         Uses Gemini to dynamically select the best tool and arguments
         to prove/disprove the hypothesis.
         """
-        from langchain_core.pydantic_v1 import BaseModel, Field
+        from pydantic import BaseModel, Field
         
         class VerificationTool(BaseModel):
             """Tool call to verify hypothesis."""

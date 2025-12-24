@@ -58,24 +58,49 @@ export const useStore = create<State>((set, get) => ({
             // Optional: push a system entry if needed, or just leave it empty
             const initEntry: LogEntry = {
                 id: 'sys-init',
-                timestamp: new Date().toLocaleTimeString(),
-                type: 'system_status',
-                description: 'Connected to Agent system'
+                type: 'system',
+                source: 'WebSocket',
+                description: 'Connected to Agent system',
+                timestamp: new Date().toISOString(),
             };
-            set((state: any) => ({ logs: [initEntry, ...state.logs] }));
+            set((state) => ({ logs: [initEntry, ...state.logs] }));
+        };
+
+        socket.onmessage = (event) => {
+            try {
+                const message = JSON.parse(event.data);
+                
+                // Create structured log entry
+                const logEntry: LogEntry = {
+                    id: `log-${Date.now()}-${Math.random()}`,
+                    type: message.type || 'unknown',
+                    source: message.data?.source || 'System',
+                    description: message.data?.description || JSON.stringify(message.data),
+                    timestamp: message.data?.timestamp || new Date().toISOString(),
+                    data: message.data,
+                };
+
+                set((state) => ({
+                    logs: [logEntry, ...state.logs].slice(0, 100), // Keep last 100
+                }));
+            } catch (err) {
+                console.error('Failed to parse WebSocket message:', err);
+            }
+        };
+
+        socket.onerror = (error) => {
+            console.error('WebSocket error:', error);
+            set({ isConnected: false });
         };
 
         socket.onclose = () => {
             set({ isConnected: false, socket: null });
-            // Reconnect logic could go here
-        };
-
-        socket.onmessage = (event) => {
-            const msg = JSON.parse(event.data);
-            handleIncomingMessage(set, get, msg);
         };
 
         set({ socket });
+        
+        // Expose WebSocket globally for ThoughtBubble component
+        (window as any).__agentWebSocket = socket;
     },
     
     toggleSimulation: async () => {
