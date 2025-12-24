@@ -67,7 +67,7 @@ const RichAgentNode: React.FC<RichAgentNodeProps> = memo(({ data }) => {
             {/* Robot Head Container */}
             <div
                 className="flex flex-col items-center"
-                style={{ width: 140 }}
+                style={{ minWidth: 140, maxWidth: 200 }}
             >
                 {/* Antenna */}
                 <div className="flex flex-col items-center mb-1">

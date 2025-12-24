@@ -151,7 +151,10 @@ class MasterOrchestrator(BaseAgent):
         
         # Use simple invoke for now, returning dict
         try:
-            result = await self.agent.ainvoke({"messages": [{"role": "user", "content": prompt}]})
+            result = await self.agent.ainvoke(
+                {"messages": [{"role": "user", "content": prompt}]},
+                config={"configurable": {"thread_id": "orchestrator-decision"}}
+            )
             # Parse finding
             content = result["messages"][-1].content
             

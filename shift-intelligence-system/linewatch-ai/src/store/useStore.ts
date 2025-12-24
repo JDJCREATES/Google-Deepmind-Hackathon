@@ -70,6 +70,11 @@ export const useStore = create<State>((set, get) => ({
             try {
                 const message = JSON.parse(event.data);
                 
+                // Skip line_status messages - they're just noise for the Activity Log
+                if (message.type === 'line_status') {
+                    return;
+                }
+                
                 // Create structured log entry
                 const logEntry: LogEntry = {
                     id: `log-${Date.now()}-${Math.random()}`,

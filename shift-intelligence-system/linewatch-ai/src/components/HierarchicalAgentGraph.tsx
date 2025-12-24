@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import ReactFlow, {
     Background,
     useNodesState,
@@ -9,11 +9,56 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 import { useStore, type LogEntry } from '../store/useStore';
 import RichAgentNode from './RichAgentNode';
-import ThoughtBubble from './ThoughtBubble';
+
+// Thought Bubble Node Component
+const ThoughtBubbleNode: React.FC<{ data: { text: string; agentColor: string; offsetX: number } }> = ({ data }) => {
+    return (
+        <div 
+            className="pointer-events-none"
+            style={{
+                animation: 'thoughtDrift 12s ease-out forwards',
+                transform: `translateX(${data.offsetX}px)`,
+            }}
+        >
+            <div 
+                className="p-3 rounded-lg shadow-lg max-w-xs"
+                style={{ 
+                    backgroundColor: data.agentColor + '40', 
+                    borderColor: data.agentColor, 
+                    borderWidth: '1px', 
+                    borderStyle: 'solid' 
+                }}
+            >
+                <p className="text-xs text-stone-200 leading-tight font-medium">
+                    {data.text}
+                </p>
+            </div>
+            <style dangerouslySetInnerHTML={{__html: `
+                @keyframes thoughtDrift {
+                    0% {
+                        transform: translateY(0);
+                        opacity: 0;
+                    }
+                    10% {
+                        opacity: 1;
+                    }
+                    90% {
+                        opacity: 1;
+                    }
+                    100% {
+                        transform: translateY(-180px);
+                        opacity: 0;
+                    }
+                }
+            `}} />
+        </div>
+    );
+};
 
 // Register custom node types
 const nodeTypes = {
     richAgent: RichAgentNode,
+    thoughtBubble: ThoughtBubbleNode,
 };
 
 // Fixed positions for "Octopus" X-Layout
@@ -38,6 +83,7 @@ interface ThoughtBubbleData {
     agentId: string;
     text: string;
     timestamp: number;
+    offsetX?: number;
 }
 
 const HierarchicalAgentGraph: React.FC = () => {
@@ -45,6 +91,8 @@ const HierarchicalAgentGraph: React.FC = () => {
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
     const [thoughtBubbles, setThoughtBubbles] = useState<ThoughtBubbleData[]>([]);
     const [agentTokens, setAgentTokens] = useState<Record<string, {input: number, output: number}>>({});
+    const [currentActiveAgent, setCurrentActiveAgent] = useState<string | null>(null);
+    const activeAgentTimeoutRef = useRef<number | null>(null);
     const { logs } = useStore();
 
     // Extract agent-specific logs for thought streams
@@ -82,69 +130,97 @@ const HierarchicalAgentGraph: React.FC = () => {
         return thoughts;
     }, [logs]);
 
-    // Detect active agent from latest log
-    const activeAgent = useMemo(() => {
-        if (logs.length === 0) return null;
-        const latest = logs[0];
-        const source = (latest.source || '').toLowerCase();
-
-        if (source.includes('orchestrator') || source.includes('master')) return 'orchestrator';
-        if (source.includes('production')) return 'production';
-        if (source.includes('compliance')) return 'compliance';
-        if (source.includes('staffing')) return 'staffing';
-        if (source.includes('maintenance')) return 'maintenance';
-        return null;
-    }, [logs]);
+    // Use currentActiveAgent from WebSocket events instead of logs
+    const activeAgent = currentActiveAgent;
 
     // Listen for agent_thinking WebSocket events
     useEffect(() => {
         const handleMessage = (event: MessageEvent) => {
             try {
                 const message = JSON.parse(event.data);
+                console.log('[HierarchicalAgentGraph] WebSocket message:', message.type, message.data);
                 
                 // Handle thought bubbles
                 if (message.type === 'agent_thinking') {
                     const { agent, thought } = message.data;
+                    console.log('[ThoughtBubble] Creating bubble for agent:', agent, 'thought:', thought);
                     const bubbleId = `bubble-${Date.now()}-${Math.random()}`;
+                    
+                    // Add horizontal offset variation (-40 to +40 pixels)
+                    const offsetX = (Math.random() - 0.5) * 80;
                     
                     setThoughtBubbles(prev => [...prev, {
                         id: bubbleId,
                         agentId: agent,
                         text: thought,
-                        timestamp: Date.now()
+                        timestamp: Date.now(),
+                        offsetX
                     }]);
+                    
+                    // Remove bubble after 12 seconds
+                    setTimeout(() => {
+                        setThoughtBubbles(prev => prev.filter(b => b.id !== bubbleId));
+                    }, 12000);
+                    
+                    // Clear any existing timeout
+                    if (activeAgentTimeoutRef.current) {
+                        clearTimeout(activeAgentTimeoutRef.current);
+                    }
+                    
+                    // Set this agent as active
+                    setCurrentActiveAgent(agent);
+                    console.log('[ActiveAgent] Set active agent to:', agent);
+                    
+                    // Auto-reset after 3 seconds
+                    activeAgentTimeoutRef.current = setTimeout(() => {
+                        console.log('[ActiveAgent] Resetting active agent from:', agent);
+                        setCurrentActiveAgent(null);
+                        activeAgentTimeoutRef.current = null;
+                    }, 3000);
                 }
                 
                 // Handle token stats
                 if (message.type === 'agent_stats_update') {
                     const { agent, input_tokens, output_tokens } = message.data;
-                    setAgentTokens(prev => ({
-                        ...prev,
-                        [agent]: {
-                            input: input_tokens,
-                            output: output_tokens
-                        }
-                    }));
+                    console.log('[TokenStats] Update for agent:', agent, 'in:', input_tokens, 'out:', output_tokens);
+                    setAgentTokens(prev => {
+                        const updated = {
+                            ...prev,
+                            [agent]: {
+                                input: input_tokens,
+                                output: output_tokens
+                            }
+                        };
+                        console.log('[TokenStats] Updated state:', updated);
+                        return updated;
+                    });
                 }
             } catch (e) {
-                // Ignore parse errors
+                console.error('[HierarchicalAgentGraph] Failed to parse WebSocket message:', e);
             }
         };
 
         // Access the WebSocket from useStore
         const ws = (window as any).__agentWebSocket;
+        console.log('[HierarchicalAgentGraph] WebSocket instance:', ws);
         if (ws) {
             ws.addEventListener('message', handleMessage);
-            return () => ws.removeEventListener('message', handleMessage);
+            return () => {
+                ws.removeEventListener('message', handleMessage);
+                // Clean up timeout on unmount
+                if (activeAgentTimeoutRef.current) {
+                    clearTimeout(activeAgentTimeoutRef.current);
+                }
+            };
+        } else {
+            console.warn('[HierarchicalAgentGraph] No WebSocket instance found on window.__agentWebSocket');
         }
     }, []);
 
-    const removeBubble = (id: string) => {
-        setThoughtBubbles(prev => prev.filter(b => b.id !== id));
-    };
-
     // Initialize nodes
     useEffect(() => {
+        console.log('[Nodes] Updating nodes. Active agent:', activeAgent, 'Token data:', agentTokens);
+        
         const agentNodes = [
             {
                 id: 'orchestrator',
@@ -223,8 +299,28 @@ const HierarchicalAgentGraph: React.FC = () => {
             },
         ];
 
-        setNodes(agentNodes);
-    }, [agentThoughts, activeAgent, agentTokens]);
+        // Add thought bubble nodes
+        const thoughtBubbleNodes = thoughtBubbles.map((bubble) => {
+            const position = POSITIONS[bubble.agentId as keyof typeof POSITIONS];
+            if (!position) return null;
+
+            return {
+                id: bubble.id,
+                type: 'thoughtBubble',
+                position: { x: position.x, y: position.y - 100 },
+                data: {
+                    text: bubble.text,
+                    agentColor: agentColors[bubble.agentId] || '#6B7280',
+                    offsetX: (bubble as any).offsetX || 0,
+                },
+                draggable: false,
+                selectable: false,
+            };
+        }).filter(Boolean) as any[];
+
+        // Combine all nodes
+        setNodes([...agentNodes, ...thoughtBubbleNodes]);
+    }, [agentThoughts, activeAgent, agentTokens, thoughtBubbles]);
 
     // Initialize edges (Hub & Spoke from Orchestrator)
     useEffect(() => {
@@ -258,32 +354,6 @@ const HierarchicalAgentGraph: React.FC = () => {
 
     return (
         <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-            {/* Thought Bubbles Layer */}
-            {thoughtBubbles.map((bubble) => {
-                const position = POSITIONS[bubble.agentId as keyof typeof POSITIONS];
-                if (!position) return null;
-
-                return (
-                    <div
-                        key={bubble.id}
-                        style={{
-                            position: 'absolute',
-                            left: `calc(50% + ${position.x}px)`,
-                            top: `calc(50% + ${position.y - 80}px)`,
-                            transform: 'translate(-50%, -50%)',
-                            zIndex: 1000,
-                        }}
-                    >
-                        <ThoughtBubble
-                            id={bubble.id}
-                            text={bubble.text}
-                            agentColor={agentColors[bubble.agentId] || '#6B7280'}
-                            onComplete={removeBubble}
-                        />
-                    </div>
-                );
-            })}
-
             <ReactFlow
                 nodes={nodes}
                 edges={edges}

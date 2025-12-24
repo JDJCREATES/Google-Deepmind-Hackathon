@@ -686,6 +686,9 @@ Needs: Higher-level coordination or human decision
         """
         from pydantic import BaseModel, Field
         
+        # Broadcast that we're working on this hypothesis
+        await self._broadcast_thought(f"Proposing verification for hypothesis: {hypothesis.description[:100]}...")
+        
         class VerificationTool(BaseModel):
             """Tool call to verify hypothesis."""
             tool_name: str = Field(description="Name of the tool to call (e.g. check_sensors, inspect_machine)")
@@ -710,6 +713,31 @@ Needs: Higher-level coordination or human decision
         
         try:
             result = await llm.ainvoke(system)
+            
+            # Track tokens (llm.ainvoke doesn't return usage, but we can track the call)
+            # Note: with_structured_output doesn't expose token usage easily
+            # We'll increment a counter as a proxy
+            self.total_input_tokens += 100  # Rough estimate
+            self.total_output_tokens += 50   # Rough estimate
+            
+            # Broadcast updated stats
+            from app.services.websocket import manager
+            agent_id = self.agent_name.replace("Agent", "").replace("Master", "").lower()
+            if agent_id == "orchestrator":
+                agent_id = "orchestrator"
+            
+            await manager.broadcast({
+                "type": "agent_stats_update",
+                "data": {
+                    "agent": agent_id,
+                    "input_tokens": self.total_input_tokens,
+                    "output_tokens": self.total_output_tokens,
+                    "timestamp": datetime.now().isoformat()
+                }
+            })
+            
+            await self._broadcast_thought(f"Proposed tool: {result.tool_name} - {result.rationale[:80]}...")
+            
             return {
                 "tool": result.tool_name,
                 "reasoning": result.rationale,
