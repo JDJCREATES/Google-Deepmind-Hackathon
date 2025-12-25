@@ -125,19 +125,26 @@ class BaseAgent(ABC):
         try:
             from app.services.websocket import manager
             
-            # Send both the legacy format and new structured format
-            await manager.broadcast({
-                "type": message_type,
-                "data": {
-                    "source": self.agent_name,
-                    "description": message,
-                    "timestamp": datetime.now().isoformat()
-                }
-            })
+            # 1. Send Legacy/Activity Log Entry (ONLY if it's NOT just a thought)
+            # This prevents duplicate logs where we see both "Thinking..." and "Thinking..."
+            if message_type != "agent_thinking":
+                await manager.broadcast({
+                    "type": message_type,
+                    "data": {
+                        "source": self.agent_name,
+                        "description": message,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                })
             
-            # Also send as agent_thinking for thought bubbles
-            # FILTER: Only broadcast meaningful thoughts, not generic process logs
-            if message_type == "agent_activity":
+            # 2. Send Thought Bubble / Reasoning Event
+            # This is displayed in the graph bubbles AND the activity log (as "Thinking")
+            should_broadcast_thought = (
+                message_type == "agent_thinking" or 
+                message_type == "agent_activity"
+            )
+            
+            if should_broadcast_thought:
                 noisy_patterns = [
                     "Starting action phase",
                     "Actions completed",
@@ -146,11 +153,16 @@ class BaseAgent(ABC):
                 is_noisy = any(p in message for p in noisy_patterns)
                 
                 if not is_noisy:
+                    # Clean up the message for display if it's an internal log
+                    clean_msg = message
+                    if "Analyzing" in message and "context" in message:
+                        clean_msg = "Checking context..."
+                        
                     await manager.broadcast({
                         "type": "agent_thinking",
                         "data": {
                             "agent": self.agent_name.replace("Agent", "").lower(),
-                            "thought": message,
+                            "thought": clean_msg,
                             "timestamp": datetime.now().isoformat()
                         }
                     })

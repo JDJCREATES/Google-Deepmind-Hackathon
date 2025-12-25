@@ -1136,6 +1136,16 @@ class SimulationService:
                 return True
         return False
 
+    def get_visible_operator_ids(self) -> List[str]:
+        """
+        Get IDs of operators currently visible to cameras.
+        Used by Agents to enforce Fog of War.
+        """
+        return [
+            op["id"] for op in self.operators 
+            if op.get("visible_to_cameras", False)
+        ]
+
     
     def _relieve_operator(self):
         """Relieve an operator and send them on break."""
@@ -1297,11 +1307,20 @@ class SimulationService:
                 best_op["status"] = "moving"
                 best_op["current_action"] = f"Fixing Line {line_id}"
         
+        failure_modes = [
+            "Motor Overheat (Temp > 85°C)",
+            "Conveyor Belt Jam",
+            "Sensor Misalignment",
+            "Hydraulic Pressure Drop",
+            "Pneumatic Cylinder Stuck"
+        ]
+        detail = random.choice(failure_modes)
+        
         return {
             "type": "visual_signal",
             "data": {
                 "source": f"Camera_{line_id:02d}",
-                "description": f"Equipment Failure detected on Line {line_id}",
+                "description": f"Equipment Warning: {detail} on Line {line_id}",
                 "severity": "HIGH",
                 "line_id": line_id,
                 "timestamp": datetime.now().isoformat()

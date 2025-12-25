@@ -593,7 +593,7 @@ const OperatorComp: React.FC<{ operator: { id: string; name: string; x: number; 
         groupRef.current.to({
             x: operator.x,
             y: operator.y,
-            duration: 0.6, // Slight buffer over 0.5s tick rate
+            duration: 0.5, // Exact match to backend tick rate
             easing: Konva.Easings.Linear,
         });
     }, [operator.x, operator.y]);
@@ -614,7 +614,17 @@ const OperatorComp: React.FC<{ operator: { id: string; name: string; x: number; 
             <Circle radius={14} fill={fillColor} opacity={0.15} />
             <Circle radius={10} fill={fillColor} opacity={0.7} stroke={fillColor} strokeWidth={2} shadowColor={fillColor} shadowBlur={8} shadowOpacity={0.5} />
             <Circle radius={3} fill="#FFF" opacity={0.9} />
-            <Text text={operator.name} fontSize={8} fontFamily="Inter, sans-serif" fill="#E2E8F0" y={16} x={-20} width={40} align="center" />
+            {/* Centered label below operator */}
+            <Text 
+                text={operator.name} 
+                fontSize={10} 
+                fontFamily="Inter, sans-serif" 
+                fill="#E2E8F0" 
+                y={14} 
+                x={-30} 
+                width={60} 
+                align="center" 
+            />
         </Group>
     );
 };

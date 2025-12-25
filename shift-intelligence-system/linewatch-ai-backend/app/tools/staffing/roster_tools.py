@@ -547,14 +547,32 @@ async def check_fatigue_levels() -> Dict[str, Any]:
             "recommendations": [],
         }
         
+        # Fog of War: Only report fatigue for visible employees
+        from app.services.simulation import simulation
+        
+        # In a real microservice architecture, this would be an API call
+        # For this monolith, we access the service directly
+        visible_ids = simulation.get_visible_operator_ids()
+        
         for emp_id, employee in employees.items():
+            # Fog of War check
+            is_visible = emp_id in visible_ids
+            
             fatigue_data = {
                 "employee_id": emp_id,
                 "name": employee.name,
-                "fatigue_level": employee.fatigue_level,
-                "hours_worked": employee.hours_worked,
+                "fatigue_level": employee.fatigue_level if is_visible else 0.0, # Mask actual fatigue
+                "hours_worked": employee.hours_worked, # This is known (HR data)
                 "assigned_line": employee.assigned_line,
+                "is_visible": is_visible
             }
+            
+            if not is_visible:
+                # If not visible, we assume low fatigue physics-wise
+                # But we still report them as "low_fatigue" or separate category?
+                # For now, just assume they are fine unless seen otherwise
+                fatigue_report["low_fatigue"].append(fatigue_data)
+                continue
             
             if employee.fatigue_level > 0.9:
                 fatigue_report["critical_fatigue"].append(fatigue_data)

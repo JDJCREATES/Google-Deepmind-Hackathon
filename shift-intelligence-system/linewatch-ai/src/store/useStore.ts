@@ -338,7 +338,7 @@ export const useStore = create<State>((set, get) => ({
                 
                 if (!description) {
                     if (message.data?.thought) {
-                        description = message.data.thought;
+                        description = `💭 ${message.data.thought}`;
                     } else if (message.data?.actions && Array.isArray(message.data.actions)) {
                         description = `Exec: ${message.data.actions.join(', ')}`;
                     } else if (message.data?.reasoning) {
