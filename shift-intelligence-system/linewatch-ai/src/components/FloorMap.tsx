@@ -248,10 +248,10 @@ const FloorMap: React.FC = () => {
                         <ConveyorComp key={conv.id} conveyor={conv} />
                     ))}
 
-                    {/* Real Conveyor Boxes (NEW) */}
-                    {conveyorBoxArray.map((box) => (
+                    {/* Real Conveyor Boxes (DISABLED - showing counters only) */}
+                    {/* {conveyorBoxArray.map((box) => (
                         <ConveyorBoxComp key={box.id} box={box} />
-                    ))}
+                    ))} */}
 
                     {/* Machine Stacks with Production State */}
                     {liveLines?.map((line: MachineData & { productionState?: MachineProductionState }) => (

@@ -203,6 +203,7 @@ const HierarchicalAgentGraph: React.FC = () => {
                 // Handle token stats
                 if (message.type === 'agent_stats_update') {
                     const { agent, input_tokens, output_tokens } = message.data;
+                    console.log(`📊 Token update: ${agent} - In: ${input_tokens}, Out: ${output_tokens}`);
 
                     setAgentTokens(prev => {
                         const updated = {

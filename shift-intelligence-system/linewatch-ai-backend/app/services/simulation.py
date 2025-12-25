@@ -273,10 +273,9 @@ class SimulationService:
         # =================================================================
         # SUPERVISOR
         # =================================================================
-        # Supervisor spawns in offices (bottom-right area)
-        # Offices are at: x = canvas_w - 100, y = canvas_h * 0.6
-        office_x = self.canvas_width - 100 + 50  # Center of office area
-        office_y = int(self.canvas_height * 0.7)  # Middle of office zone
+        # Supervisor spawns in office area (bottom-right)
+        office_x = self.canvas_width - 50  # Right side, in office zone
+        office_y = int(self.canvas_height * 0.7)  # Lower area
         
         self.supervisor = {
             "id": "SUP-01",
@@ -364,13 +363,15 @@ class SimulationService:
         self.pathfinding.mark_obstacle(0, 0, warehouse_w, self.canvas_height)
         obstacle_count += 1
         
-        # Mark break room and offices as obstacles
+        # Mark break room as obstacle (top portion only, leave office area walkable)
         breakroom_w = 100
+        breakroom_h = int(self.canvas_height * 0.4)  # Only top 40% is breakroom
         self.pathfinding.mark_obstacle(
             self.canvas_width - breakroom_w, 0, 
-            breakroom_w, self.canvas_height
+            breakroom_w, breakroom_h
         )
         obstacle_count += 1
+        # Office area (bottom 60%) is left walkable for supervisor
         
         logger.info(f"🚧 Marked {obstacle_count} obstacles in pathfinding grid")
     
@@ -396,6 +397,7 @@ class SimulationService:
                     "target_x": layout_op["x"],
                     "target_y": layout_op["y"],
                     "fatigue": 0.0,
+                    "fatigue_rate": random.uniform(1.5, 4.5),  # Each operator tires at different rate
                     "on_break": False,
                     "break_requested": False,
                     "path": [],
@@ -523,16 +525,35 @@ class SimulationService:
         if random.random() < (settings.event_probability_safety_violation / 5):
             events.append(self._trigger_safety_violation())
         
-        # 9. FOG OF WAR - Visibility Sync (RE-ENABLED with fixed camera detection)
-        # Cameras now have proper range (400px) and angles to detect operators
+        # 9. BROADCAST ALL OPERATOR DATA (for UI - fatigue bars, stats, etc)
+        # This is SEPARATE from fog-of-war visibility
+        all_operators_data = {}
+        for op in self.operators:
+            if op.get("is_active", True):
+                all_operators_data[op["id"]] = {
+                    "id": op["id"],
+                    "name": op["name"],
+                    "fatigue": op["fatigue"],
+                    "on_break": op["on_break"],
+                    "break_requested": op["break_requested"],
+                    "status": op["status"],
+                    "current_action": op["current_action"]
+                }
+        
+        events.append({
+            "type": "operator_data_update",
+            "data": all_operators_data
+        })
+        
+        # 10. FOG OF WAR - Map Visibility (for rendering positions on map)
         visible_operator_ids = []
         visible_operators_data = {}
         for op in self.operators:
             if op.get("is_active", True) and op.get("visible_to_cameras", False):
                 visible_operator_ids.append(op["id"])
-                visible_operators_data[op["id"]] = op
+                visible_operators_data[op["id"]] = op  # Full data including x, y
         
-        # Send visibility sync - frontend will REPLACE operators state with this
+        # Send visibility sync - frontend will use this for MAP RENDERING only
         events.append({
             "type": "visibility_sync",
             "data": {
@@ -887,8 +908,9 @@ class SimulationService:
     
     def _update_operator_fatigue(self):
         """Accumulate operator fatigue and handle break requests."""
-        FATIGUE_RATE = 0.5  # Fatigue points per tick (1 second)
-        FATIGUE_THRESHOLD = 80.0  # Request break at 80%
+        # Fatigue constants - increased for faster testing
+        FATIGUE_RATE = 3.0  # Fatigue points per tick (was 0.5, now ~27 seconds to break)
+        FATIGUE_THRESHOLD = 60.0  # Request break at 60% (was 80%)
         BREAK_RECOVERY_RATE = 2.0  # Fatigue recovery per tick on break
         
         for op in self.operators:
@@ -904,8 +926,9 @@ class SimulationService:
                     op["current_action"] = "returning_from_break"
                     logger.info(f"👷 {op['name']} has returned from break")
             else:
-                # Accumulate fatigue while working
-                op["fatigue"] = min(100.0, op["fatigue"] + FATIGUE_RATE)
+                # Accumulate fatigue while working (using operator's individual rate)
+                fatigue_rate = op.get("fatigue_rate", 2.5)  # Fallback to 2.5 if not set
+                op["fatigue"] = min(100.0, op["fatigue"] + fatigue_rate)
                 
                 # Request break if fatigued
                 if op["fatigue"] >= FATIGUE_THRESHOLD and not op["break_requested"]:
@@ -939,6 +962,8 @@ class SimulationService:
                         logger.info(f"👔 Supervisor dispatched to relieve {op['name']}")
                     else:
                         logger.warning(f"⚠️  No path found for supervisor to {op['name']}")
+                        logger.warning(f"   Supervisor at ({self.supervisor['x']:.0f}, {self.supervisor['y']:.0f})")
+                        logger.warning(f"   {op['name']} at ({op['x']:.0f}, {op['y']:.0f})")
                     break
         
         # Move supervisor along path
@@ -966,6 +991,34 @@ class SimulationService:
                     # Move towards waypoint
                     self.supervisor["x"] += (dx / dist) * speed
                     self.supervisor["y"] += (dy / dist) * speed
+        
+        # Handle supervisor returning to office (MOVED FROM BELOW)
+        elif self.supervisor["status"] == "returning" and self.supervisor["path"]:
+            path = self.supervisor["path"]
+            idx = self.supervisor["path_index"]
+            
+            if idx < len(path):
+                target_x, target_y = path[idx]
+                dx = target_x - self.supervisor["x"]
+                dy = target_y - self.supervisor["y"]
+                dist = math.sqrt(dx * dx + dy * dy)
+                
+                if dist < speed:
+                    # Reached waypoint
+                    self.supervisor["x"] = target_x
+                    self.supervisor["y"] = target_y
+                    self.supervisor["path_index"] += 1
+                else:
+                    # Move towards waypoint
+                    self.supervisor["x"] += (dx / dist) * speed
+                    self.supervisor["y"] += (dy / dist) * speed
+            
+            if idx >= len(path):
+                # Arrived back at office
+                self.supervisor["status"] = "idle"
+                self.supervisor["current_action"] = "monitoring"
+                self.supervisor["path"] = []
+                self.supervisor["path_index"] = 0
     
     def _relieve_operator(self):
         """Relieve an operator and send them on break."""
@@ -1004,17 +1057,7 @@ class SimulationService:
             
             self.supervisor["assigned_operator_id"] = None
         
-        # Handle supervisor returning to office
-        if self.supervisor["status"] == "returning" and self.supervisor["path"]:
-            path = self.supervisor["path"]
-            idx = self.supervisor["path_index"]
-            
-            if idx >= len(path):
-                # Arrived back at office
-                self.supervisor["status"] = "idle"
-                self.supervisor["current_action"] = "monitoring"
-                self.supervisor["path"] = []
-                self.supervisor["path_index"] = 0
+
     
     # =========================================================================
     # CAMERAS (existing logic)

@@ -206,6 +206,16 @@ class LayoutService:
             "fov": 90, "range": 280, "status": "active"
         })
         
+        # Cam 6: Break Room → small camera pointing down (checks who's on break)
+        breakroom_x = canvas_w - breakroom_w
+        breakroom_cam_x = breakroom_x + (breakroom_w / 2)
+        breakroom_cam_y = 10
+        layout["cameras"].append({
+            "id": "cam_06", "label": "CAM-06", "lines_covered": [],
+            "x": breakroom_cam_x, "y": breakroom_cam_y, "rotation": 90, 
+            "fov": 50, "range": 150, "status": "active"
+        })
+        
         # RESTORED: Operator Generation
         operator_names = ["Alex", "Jordan", "Sam", "Casey", "Riley"]
         operator_statuses = ["monitoring", "inspecting", "idle", "idle", "monitoring"]

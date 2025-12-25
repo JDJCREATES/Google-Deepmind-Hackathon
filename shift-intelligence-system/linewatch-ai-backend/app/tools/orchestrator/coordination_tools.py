@@ -158,7 +158,7 @@ async def get_all_agent_status() -> Dict[str, Any]:
     
     try:
         # Get recent decisions from all agents
-        decisions = await shared_context.decisions
+        decisions = shared_context.decisions
         
         agent_status = {
             "timestamp": datetime.now().isoformat(),
