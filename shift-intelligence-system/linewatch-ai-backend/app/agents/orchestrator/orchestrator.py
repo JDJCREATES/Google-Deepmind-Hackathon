@@ -13,6 +13,7 @@ from app.tools.orchestrator import (
     escalate_to_human,
     update_shift_plan,
     get_all_agent_status,
+    alert_supervisor_to_check,
 )
 from app.utils.logging import get_agent_logger
 
@@ -40,6 +41,7 @@ class MasterOrchestrator(BaseAgent):
             escalate_to_human,
             update_shift_plan,
             get_all_agent_status,
+            alert_supervisor_to_check,
         ]
         
         super().__init__(

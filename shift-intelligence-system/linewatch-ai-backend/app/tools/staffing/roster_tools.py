@@ -328,6 +328,13 @@ async def schedule_break(
         else:
             note = "Employee not assigned to line"
         
+        # TRIGGER SIMULATION ACTION
+        # This bridges the gap between Agent Decision and Simulation Execution
+        from app.services.simulation import simulation
+        sim_triggered = simulation.trigger_operator_break(employee_id)
+        
+        sim_note = "Simulation executed" if sim_triggered else "Simulation trigger failed (operator not found)"
+        
         result = {
             "employee_id": employee_id,
             "employee_name": employee.name,
@@ -339,12 +346,13 @@ async def schedule_break(
             ).isoformat(),
             "assigned_line": line_num,
             "coverage_note": note,
+            "simulation_status": sim_note,
             "status": "SCHEDULED",
         }
         
         logger.info(
             f"✅ Break scheduled for {employee_id}: "
-            f"{scheduled_time.strftime('%H:%M')} ({duration_minutes}min)"
+            f"{scheduled_time.strftime('%H:%M')} ({duration_minutes}min) - {sim_note}"
         )
         
         return result

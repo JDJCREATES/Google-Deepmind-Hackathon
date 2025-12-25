@@ -1017,8 +1017,42 @@ class SimulationService:
                 # Arrived back at office
                 self.supervisor["status"] = "idle"
                 self.supervisor["current_action"] = "monitoring"
-                self.supervisor["path"] = []
-                self.supervisor["path_index"] = 0
+                self.supervisor["assigned_operator_id"] = None
+
+    def dispatch_supervisor_to_location(self, target_x: int, target_y: int, reason: str) -> bool:
+        """
+        External command to dispatch supervisor to a specific location.
+        Used by Master Orchestrator for proactive checking.
+        """
+        if self.supervisor["status"] != "idle":
+            return False  # Supervisor busy
+            
+        path = self.pathfinding.find_path(
+            self.supervisor["x"], self.supervisor["y"],
+            target_x, target_y
+        )
+        
+        if path:
+            self.supervisor["path"] = path
+            self.supervisor["path_index"] = 0
+            self.supervisor["status"] = "moving_to_operator" # Reuse moving status
+            self.supervisor["current_action"] = f"checking_{reason}"
+            logger.info(f"👔 Supervisor dispatched to ({target_x}, {target_y}) for: {reason}")
+            return True
+        return False
+
+    def trigger_operator_break(self, operator_id: str) -> bool:
+        """
+        External command to force an operator break.
+        Used by Staffing Agent.
+        """
+        for op in self.operators:
+            if op["id"] == operator_id:
+                op["break_requested"] = True
+                logger.info(f"👔 Agent triggered break for {op['name']}")
+                return True
+        return False
+
     
     def _relieve_operator(self):
         """Relieve an operator and send them on break."""
