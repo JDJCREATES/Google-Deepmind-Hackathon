@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
 import { Handle, Position } from 'reactflow';
-import { FaCog, FaUserShield, FaUsers, FaWrench, FaIndustry, FaBrain, FaLink } from 'react-icons/fa';
+import { FaCog, FaUserShield, FaUsers, FaWrench, FaIndustry, FaBrain, FaLink, FaBolt } from 'react-icons/fa';
 
 interface RichAgentNodeProps {
     data: {
@@ -14,6 +14,7 @@ interface RichAgentNodeProps {
         inputTokens?: number;
         outputTokens?: number;
         thoughtSignatures?: number;  // Count of reasoning states
+        lastAction?: string;
     };
 }
 
@@ -210,6 +211,14 @@ const RichAgentNode: React.FC<RichAgentNodeProps> = memo(({ data }) => {
                         <div className="mt-1.5 flex items-center justify-center gap-1 text-[8px] text-amber-400">
                             <FaCog className="animate-spin" size={10} />
                             <span className="font-mono">{data.activeTool}</span>
+                        </div>
+                    )}
+
+                    {/* Last Action Badge */}
+                    {data.lastAction && (
+                        <div className="mt-1.5 flex items-center justify-center gap-1 text-[8px] text-cyan-400">
+                            <FaBolt className="text-cyan-400" size={10} />
+                            <span className="font-mono">{data.lastAction}</span>
                         </div>
                     )}
                 </div>

@@ -333,11 +333,26 @@ export const useStore = create<State>((set, get) => ({
                 // LOGGABLE EVENTS (Show in Activity Log)
                 // =============================================================
                 
+                // Helper to format actions or thoughts
+                let description = message.data?.description;
+                
+                if (!description) {
+                    if (message.data?.thought) {
+                        description = message.data.thought;
+                    } else if (message.data?.actions && Array.isArray(message.data.actions)) {
+                        description = `Exec: ${message.data.actions.join(', ')}`;
+                    } else if (message.data?.reasoning) {
+                         description = message.data.reasoning;
+                    } else {
+                        description = JSON.stringify(message.data);
+                    }
+                }
+
                 const logEntry: LogEntry = {
                     id: `log-${Date.now()}-${Math.random()}`,
                     type: message.type || 'unknown',
                     source: message.data?.source || message.data?.agent || 'System',
-                    description: message.data?.description || message.data?.thought || JSON.stringify(message.data),
+                    description: description,
                     timestamp: message.data?.timestamp || new Date().toISOString(),
                     data: message.data,
                 };

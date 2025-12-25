@@ -104,6 +104,7 @@ const HierarchicalAgentGraph: React.FC = () => {
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
     const [thoughtBubbles, setThoughtBubbles] = useState<ThoughtBubbleData[]>([]);
     const [agentTokens, setAgentTokens] = useState<Record<string, {input: number, output: number}>>({});
+    const [agentActions, setAgentActions] = useState<Record<string, {action: string, timestamp: number}>>({});
     const [currentActiveAgent, setCurrentActiveAgent] = useState<string | null>(null);
     const activeAgentTimeoutRef = useRef<number | null>(null);
     const { logs, thoughtSignatures } = useStore();
@@ -217,6 +218,31 @@ const HierarchicalAgentGraph: React.FC = () => {
                         return updated;
                     });
                 }
+                
+                // Handle Agent Actions (Decisions)
+                if (message.type === 'agent_action') {
+                    const { agent, actions } = message.data;
+                    console.log(`🎬 Action update: ${agent} - ${actions[0]}`);
+                    
+                    if (actions && actions.length > 0) {
+                        setAgentActions(prev => ({
+                            ...prev,
+                            [agent]: {
+                                action: actions[0], // Take first action as summary
+                                timestamp: Date.now()
+                            }
+                        }));
+                        
+                        // Also momentarily activate the agent
+                        setCurrentActiveAgent(agent);
+                        if (activeAgentTimeoutRef.current) clearTimeout(activeAgentTimeoutRef.current);
+                        activeAgentTimeoutRef.current = setTimeout(() => {
+                            setCurrentActiveAgent(null);
+                        }, 5000);
+                        
+                        // NOTE: We do NOT clear agentActions anymore, so the last action insists.
+                    }
+                }
             } catch (e) {
                 console.error('[HierarchicalAgentGraph] Failed to parse WebSocket message:', e);
             }
@@ -241,90 +267,33 @@ const HierarchicalAgentGraph: React.FC = () => {
 
     // Initialize nodes
     useEffect(() => {
+        const labelMap: Record<string, string> = {
+            orchestrator: 'Master Orchestrator',
+            production: 'Production',
+            compliance: 'Compliance',
+            staffing: 'Staffing',
+            maintenance: 'Maintenance',
+        };
 
-        
-        const agentNodes = [
-            {
-                id: 'orchestrator',
+        const agentNodes = Object.keys(labelMap).map((key) => {
+            return {
+                id: key,
                 type: 'richAgent',
-                position: POSITIONS.orchestrator,
+                position: POSITIONS[key as keyof typeof POSITIONS],
                 data: {
-                    agentId: 'orchestrator',
-                    label: 'Master Orchestrator',
-                    type: 'orchestrator',
-                    status: activeAgent === 'orchestrator' ? 'Deliberating' : 'Idle',
-                    thoughts: agentThoughts.orchestrator,
-                    isActive: activeAgent === 'orchestrator',
-                    inputTokens: agentTokens.orchestrator?.input || 0,
-                    outputTokens: agentTokens.orchestrator?.output || 0,
-                    thoughtSignatures: thoughtSignatures.orchestrator || 0,
+                    agentId: key,
+                    label: labelMap[key as keyof typeof labelMap],
+                    type: key,
+                    status: activeAgent === key ? 'Active' : (key === 'orchestrator' ? 'Coordination' : 'Ready'),
+                    thoughts: agentThoughts[key] || [],
+                    isActive: activeAgent === key,
+                    inputTokens: agentTokens[key]?.input || 0,
+                    outputTokens: agentTokens[key]?.output || 0,
+                    thoughtSignatures: thoughtSignatures[key] || 0,
+                    lastAction: agentActions[key]?.action, // Pass the last action
                 },
-            },
-            {
-                id: 'production',
-                type: 'richAgent',
-                position: POSITIONS.production,
-                data: {
-                    agentId: 'production',
-                    label: 'Production',
-                    type: 'production',
-                    status: activeAgent === 'production' ? 'Analyzing' : 'Ready',
-                    thoughts: agentThoughts.production,
-                    isActive: activeAgent === 'production',
-                    inputTokens: agentTokens.production?.input || 0,
-                    outputTokens: agentTokens.production?.output || 0,
-                    thoughtSignatures: thoughtSignatures.production || 0,
-                },
-            },
-            {
-                id: 'compliance',
-                type: 'richAgent',
-                position: POSITIONS.compliance,
-                data: {
-                    agentId: 'compliance',
-                    label: 'Compliance',
-                    type: 'compliance',
-                    status: activeAgent === 'compliance' ? 'Checking' : 'Ready',
-                    thoughts: agentThoughts.compliance,
-                    isActive: activeAgent === 'compliance',
-                    inputTokens: agentTokens.compliance?.input || 0,
-                    outputTokens: agentTokens.compliance?.output || 0,
-                    thoughtSignatures: thoughtSignatures.compliance || 0,
-                },
-            },
-            {
-                id: 'staffing',
-                type: 'richAgent',
-                position: POSITIONS.staffing,
-                data: {
-                    agentId: 'staffing',
-                    label: 'Staffing',
-                    type: 'staffing',
-                    status: activeAgent === 'staffing' ? 'Scheduling' : 'Ready',
-                    thoughts: agentThoughts.staffing,
-                    isActive: activeAgent === 'staffing',
-                    inputTokens: agentTokens.staffing?.input || 0,
-                    outputTokens: agentTokens.staffing?.output || 0,
-                    thoughtSignatures: thoughtSignatures.staffing || 0,
-                },
-            },
-            {
-                id: 'maintenance',
-                type: 'richAgent',
-                position: POSITIONS.maintenance,
-                data: {
-                    agentId: 'maintenance',
-                    label: 'Maintenance',
-                    type: 'maintenance',
-                    status: activeAgent === 'maintenance' ? 'Inspecting' : 'Ready',
-                    thoughts: agentThoughts.maintenance,
-                    isActive: activeAgent === 'maintenance',
-                    inputTokens: agentTokens.maintenance?.input || 0,
-                    outputTokens: agentTokens.maintenance?.output || 0,
-                    thoughtSignatures: thoughtSignatures.maintenance || 0,
-                },
-            },
-        ];
+            };
+        });
 
         // Add thought bubble nodes with vertical stacking
         const thoughtBubbleNodes = thoughtBubbles.map((bubble, index) => {
@@ -370,7 +339,7 @@ const HierarchicalAgentGraph: React.FC = () => {
 
         // Combine all nodes
         setNodes([...agentNodes, ...thoughtBubbleNodes]);
-    }, [agentThoughts, activeAgent, agentTokens, thoughtBubbles, thoughtSignatures]);
+    }, [agentThoughts, activeAgent, agentTokens, thoughtBubbles, thoughtSignatures, agentActions]);
 
     // Initialize edges (Hub & Spoke from Orchestrator)
     useEffect(() => {

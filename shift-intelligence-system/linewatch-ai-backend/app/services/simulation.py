@@ -191,7 +191,7 @@ class SimulationService:
     def __init__(self):
         self.is_running = False
         self.sim_task: Optional[asyncio.Task] = None
-        self.tick_rate = 1.0  # 1 second per tick
+        self.tick_rate = 0.5  # 0.5 seconds per tick (2Hz updates)
         
         # Layout Data
         self.layout = layout_service.get_layout()
@@ -364,12 +364,12 @@ class SimulationService:
         obstacle_count += 1
         
         # Mark break room as obstacle (top portion only, leave office area walkable)
-        breakroom_w = 100
-        breakroom_h = int(self.canvas_height * 0.4)  # Only top 40% is breakroom
-        self.pathfinding.mark_obstacle(
-            self.canvas_width - breakroom_w, 0, 
-            breakroom_w, breakroom_h
-        )
+        obstacle_count += 1
+        
+        # REMOVED: Break room is now walkable so operators can enter
+        # breakroom_w = 100
+        # breakroom_h = int(self.canvas_height * 0.4)
+        # self.pathfinding.mark_obstacle(...)
         obstacle_count += 1
         # Office area (bottom 60%) is left walkable for supervisor
         
@@ -397,7 +397,7 @@ class SimulationService:
                     "target_x": layout_op["x"],
                     "target_y": layout_op["y"],
                     "fatigue": 0.0,
-                    "fatigue_rate": random.uniform(1.5, 4.5),  # Each operator tires at different rate
+                    "fatigue_rate": random.uniform(0.1, 0.3),  # MUCH slower fatigue accumulation
                     "on_break": False,
                     "break_requested": False,
                     "path": [],
@@ -845,8 +845,52 @@ class SimulationService:
         
         for op in self.operators:
             # Skip inactive operators
-            if not op.get("is_active", True) or op.get("on_break", False):
+            if not op.get("is_active", True):
                 continue
+                
+            # === BREAK LOGIC ===
+            if op.get("on_break", False):
+                # If on break, go to breakroom (Top Right)
+                breakroom_x = self.canvas_width - 50
+                breakroom_y = 50
+                
+                # If not at breakroom, path to it
+                dist_to_break = math.hypot(op["x"] - breakroom_x, op["y"] - breakroom_y)
+                
+                if dist_to_break > 30 and not op["path"]:
+                     # Plan path to breakroom
+                    path = self.pathfinding.find_path(op["x"], op["y"], breakroom_x, breakroom_y)
+                    if path:
+                        op["path"] = path
+                        op["path_index"] = 0
+                        op["status"] = "moving_to_break"
+                        logger.info(f"☕ {op['name']} walking to breakroom")
+                
+                # If already at breakroom, just chill
+                elif dist_to_break <= 30:
+                    op["status"] = "on_break"
+                    op["current_action"] = "resting"
+                    # Small random movement in breakroom? Maybe later.
+                    
+            # === RETURNING FROM BREAK LOGIC ===
+            elif op.get("just_returned_from_break", False):
+                 # Go back to station
+                dist_to_station = math.hypot(op["x"] - op["target_x"], op["y"] - op["target_y"])
+                
+                if dist_to_station > 20 and not op["path"]:
+                     path = self.pathfinding.find_path(op["x"], op["y"], op["target_x"], op["target_y"])
+                     if path:
+                        op["path"] = path
+                        op["path_index"] = 0
+                        op["status"] = "returning_to_work"
+                        logger.info(f"🔙 {op['name']} returning to station")
+                
+                elif dist_to_station <= 20:
+                    # Arrived at station
+                    op["just_returned_from_break"] = False
+                    op["status"] = "working"
+                    op["current_action"] = "monitoring"
+
             
             # If operator has a path, follow it
             if op["path"] and op["path_index"] < len(op["path"]):
@@ -863,14 +907,29 @@ class SimulationService:
                     
                     # Check if reached final destination
                     if op["path_index"] >= len(op["path"]):
-                        op["status"] = "working"
                         op["path"] = []
                         op["path_index"] = 0
+                        
+                        # Update status on arrival
+                        if op.get("on_break"):
+                            op["status"] = "on_break"
+                        elif op.get("just_returned_from_break"):
+                            op["just_returned_from_break"] = False
+                            op["status"] = "working"
+                        else:
+                            op["status"] = "working"
                 else:
                     # Move towards waypoint
                     op["x"] += (dx / dist) * speed * self.tick_rate
                     op["y"] += (dy / dist) * speed * self.tick_rate
-                    op["status"] = "moving"
+                    
+                    # Keep status accurate
+                    if op.get("on_break"):
+                        op["status"] = "moving_to_break"
+                    elif op.get("just_returned_from_break"):
+                         op["status"] = "returning_to_work"
+                    else:
+                        op["status"] = "moving"
             else:
                 # No active path - operator is stationary
                 # Transition from working to idle
@@ -908,9 +967,8 @@ class SimulationService:
     
     def _update_operator_fatigue(self):
         """Accumulate operator fatigue and handle break requests."""
-        # Fatigue constants - increased for faster testing
-        FATIGUE_RATE = 3.0  # Fatigue points per tick (was 0.5, now ~27 seconds to break)
-        FATIGUE_THRESHOLD = 60.0  # Request break at 60% (was 80%)
+        # Fatigue constants - TUNED
+        FATIGUE_THRESHOLD = 60.0  # Request break at 60%
         BREAK_RECOVERY_RATE = 2.0  # Fatigue recovery per tick on break
         
         for op in self.operators:
@@ -924,10 +982,11 @@ class SimulationService:
                     op["break_requested"] = False
                     op["status"] = "idle"
                     op["current_action"] = "returning_from_break"
+                    op["just_returned_from_break"] = True # Flag to trigger return walk
                     logger.info(f"👷 {op['name']} has returned from break")
             else:
                 # Accumulate fatigue while working (using operator's individual rate)
-                fatigue_rate = op.get("fatigue_rate", 2.5)  # Fallback to 2.5 if not set
+                fatigue_rate = op.get("fatigue_rate", 0.2)  # Fallback to 0.2
                 op["fatigue"] = min(100.0, op["fatigue"] + fatigue_rate)
                 
                 # Request break if fatigued
@@ -937,34 +996,22 @@ class SimulationService:
     
     def _move_supervisor(self):
         """Handle supervisor movement and operator relief logic."""
-        speed = 60.0  # Supervisor moves slightly faster
+        speed = 100.0  # Supervisor moves FAST
+        MAX_CONCURRENT_BREAKS = 2
         
         # Check if any operator needs relief
         if self.supervisor["status"] == "idle":
-            for op in self.operators:
-                if op["break_requested"] and not op["on_break"]:
-                    # Assign supervisor to relieve this operator
-                    self.supervisor["assigned_operator_id"] = op["id"]
-                    self.supervisor["status"] = "moving_to_operator"
-                    self.supervisor["current_action"] = f"relieving_{op['name']}"
-                    
-                    # Calculate path to operator
-                    path = self.pathfinding.find_path(
-                        self.supervisor["x"],
-                        self.supervisor["y"],
-                        op["x"],
-                        op["y"]
-                    )
-                    
-                    if path:
-                        self.supervisor["path"] = path
-                        self.supervisor["path_index"] = 0
-                        logger.info(f"👔 Supervisor dispatched to relieve {op['name']}")
-                    else:
-                        logger.warning(f"⚠️  No path found for supervisor to {op['name']}")
-                        logger.warning(f"   Supervisor at ({self.supervisor['x']:.0f}, {self.supervisor['y']:.0f})")
-                        logger.warning(f"   {op['name']} at ({op['x']:.0f}, {op['y']:.0f})")
-                    break
+            # Check concurrency
+            current_breaks = 0
+            for o in self.operators:
+                if o.get("on_break") or o.get("current_action", "").startswith("relieving"):
+                     current_breaks += 1
+            if self.supervisor["current_action"].startswith("relieving"): # Count self if busy
+                 current_breaks += 1
+            
+            # REMOVED: Auto-dispatch logic. 
+            # Supervisor now waits for explicit assignment via trigger_operator_break
+            pass
         
         # Move supervisor along path
         if self.supervisor["status"] == "moving_to_operator" and self.supervisor["path"]:
@@ -989,8 +1036,8 @@ class SimulationService:
                         self._relieve_operator()
                 else:
                     # Move towards waypoint
-                    self.supervisor["x"] += (dx / dist) * speed
-                    self.supervisor["y"] += (dy / dist) * speed
+                    self.supervisor["x"] += (dx / dist) * speed * self.tick_rate # Applied tick rate
+                    self.supervisor["y"] += (dy / dist) * speed * self.tick_rate
         
         # Handle supervisor returning to office (MOVED FROM BELOW)
         elif self.supervisor["status"] == "returning" and self.supervisor["path"]:
@@ -1003,21 +1050,23 @@ class SimulationService:
                 dy = target_y - self.supervisor["y"]
                 dist = math.sqrt(dx * dx + dy * dy)
                 
-                if dist < speed:
+                if dist < speed * self.tick_rate:
                     # Reached waypoint
                     self.supervisor["x"] = target_x
                     self.supervisor["y"] = target_y
                     self.supervisor["path_index"] += 1
+                    
+                    # Check if reached final destination
+                    if self.supervisor["path_index"] >= len(path):
+                        # Arrived back at office
+                        self.supervisor["status"] = "idle"
+                        self.supervisor["current_action"] = "monitoring"
+                        self.supervisor["assigned_operator_id"] = None
+                        self.supervisor["path"] = []
                 else:
                     # Move towards waypoint
-                    self.supervisor["x"] += (dx / dist) * speed
-                    self.supervisor["y"] += (dy / dist) * speed
-            
-            if idx >= len(path):
-                # Arrived back at office
-                self.supervisor["status"] = "idle"
-                self.supervisor["current_action"] = "monitoring"
-                self.supervisor["assigned_operator_id"] = None
+                    self.supervisor["x"] += (dx / dist) * speed * self.tick_rate
+                    self.supervisor["y"] += (dy / dist) * speed * self.tick_rate
 
     def dispatch_supervisor_to_location(self, target_x: int, target_y: int, reason: str) -> bool:
         """
@@ -1046,10 +1095,44 @@ class SimulationService:
         External command to force an operator break.
         Used by Staffing Agent.
         """
+        # Check concurrency first
+        MAX_CONCURRENT_BREAKS = 2
+        current_breaks = 0
+        for o in self.operators:
+            if o.get("on_break") or o.get("current_action", "").startswith("relieving"):
+                    current_breaks += 1
+        if self.supervisor["current_action"].startswith("relieving"):
+                current_breaks += 1
+        
+        if current_breaks >= MAX_CONCURRENT_BREAKS:
+            logger.warning(f"⛔ Break requested for {operator_id} but max concurrent breaks reached")
+            return False
+
+        if self.supervisor["status"] != "idle":
+            logger.warning(f"⛔ Break requested but Supervisor is busy ({self.supervisor['status']})")
+            return False
+
         for op in self.operators:
             if op["id"] == operator_id:
                 op["break_requested"] = True
-                logger.info(f"👔 Agent triggered break for {op['name']}")
+                
+                # IMMEDIATE DISPATCH (Agent-driven)
+                self.supervisor["assigned_operator_id"] = op["id"]
+                self.supervisor["status"] = "moving_to_operator"
+                self.supervisor["current_action"] = f"relieving_{op['name']}"
+                
+                path = self.pathfinding.find_path(
+                    self.supervisor["x"], self.supervisor["y"],
+                    op["x"], op["y"]
+                )
+                
+                if path:
+                    self.supervisor["path"] = path
+                    self.supervisor["path_index"] = 0
+                    logger.info(f"👔 Agent dispatched Supervisor to relieve {op['name']}")
+                else:
+                    logger.warning(f"⚠️  No path found for supervisor")
+                    
                 return True
         return False
 

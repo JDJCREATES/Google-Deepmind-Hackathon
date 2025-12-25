@@ -136,17 +136,44 @@ class BaseAgent(ABC):
             })
             
             # Also send as agent_thinking for thought bubbles
+            # FILTER: Only broadcast meaningful thoughts, not generic process logs
             if message_type == "agent_activity":
-                await manager.broadcast({
-                    "type": "agent_thinking",
-                    "data": {
-                        "agent": self.agent_name.replace("Agent", "").lower(),
-                        "thought": message,
-                        "timestamp": datetime.now().isoformat()
-                    }
-                })
+                noisy_patterns = [
+                    "Starting action phase",
+                    "Actions completed",
+                    "Verify",
+                ]
+                is_noisy = any(p in message for p in noisy_patterns)
+                
+                if not is_noisy:
+                    await manager.broadcast({
+                        "type": "agent_thinking",
+                        "data": {
+                            "agent": self.agent_name.replace("Agent", "").lower(),
+                            "thought": message,
+                            "timestamp": datetime.now().isoformat()
+                        }
+                    })
         except Exception:
             pass  # Don't fail if websocket is down
+
+    async def _broadcast_action(self, actions: List[str]):
+        """Broadcast specific action event for UI emphasis."""
+        try:
+            from app.services.websocket import manager
+            if not actions:
+                return
+
+            await manager.broadcast({
+                "type": "agent_action",
+                "data": {
+                    "agent": self.agent_name.replace("Agent", "").lower(),
+                    "actions": actions,
+                    "timestamp": datetime.now().isoformat()
+                }
+            })
+        except Exception:
+            pass
 
     async def _track_tokens(self, result: Any):
         """Track token usage from LLM response and broadcast stats."""
@@ -296,7 +323,8 @@ class BaseAgent(ABC):
             ReasoningResult with thought process and proposed actions
         """
         self.logger.info(f"🧠 [{self.agent_name}] Starting reasoning phase...")
-        await self._broadcast_thought(f"Starting reasoning on context: {list(context.keys())}")
+        # Broadcast a cleaner 'analyzing' message
+        await self._broadcast_thought(f"Analyzing {len(context)} context parameters...")
         
         # Build reasoning prompt
         reasoning_prompt = self._build_reasoning_prompt(context)
@@ -335,7 +363,11 @@ class BaseAgent(ABC):
         confidence = self._calculate_confidence(result)
         
         await self._broadcast_thought(f"Reasoning complete. Confidence: {confidence:.2f}")
-        await self._broadcast_thought(f"Thoughts: {thoughts[:100]}...")
+        # Broadcast thoughts without "Thoughts:" prefix
+        if thoughts and thoughts != "No explicit reasoning trace available":
+             await self._broadcast_thought(thoughts[:200]) # Increased length
+        else:
+             await self._broadcast_thought(f"Plan: {len(proposed_actions)} actions proposed")
 
         # Determine if escalation needed
         should_escalate = confidence < 0.7 or self._detect_critical_situation(context)
@@ -447,6 +479,10 @@ class BaseAgent(ABC):
             f"Success: {action_result.success}, "
             f"Verified: {verification_passed}"
         )
+        
+        # Broadcast actions for UI visualization
+        if action_result.actions_taken:
+            await self._broadcast_action(action_result.actions_taken)
         
         return action_result
     
@@ -824,7 +860,8 @@ Needs: Higher-level coordination or human decision
             # Note: with_structured_output doesn't expose token usage metadata
             # Token tracking happens in the reason() method where we have access to usage data
             
-            await self._broadcast_thought(f"Proposed tool: {result.tool_name} - {result.rationale[:80]}...")
+            # Broadcast the human-readable rationale instead of the tool name
+            await self._broadcast_thought(f"{result.rationale}")
             
             return {
                 "tool": result.tool_name,

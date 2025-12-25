@@ -258,27 +258,29 @@ const FloorMap: React.FC = () => {
                         <MachineStack key={line.id} machine={line} productionState={line.productionState} />
                     ))}
 
-                    {/* Operators - Render from DYNAMIC store only (fog of war) */}
-                    {Object.values(operatorsWithFatigue).map((op) => (
-                        <OperatorComp key={op.id} operator={op} />
-                    ))}
-                    
-                    {/* Fatigue Bars (NEW) - Render above operators */}
-                    {Object.values(operatorsWithFatigue).map((op) => (
-                        <FatigueBar 
-                            key={`fatigue-${op.id}`} 
-                            x={op.x} 
-                            y={op.y} 
-                            fatigue={op.fatigue} 
-                            onBreak={op.on_break} 
-                        />
-                    ))}
-                    
-                    {/* Supervisor (NEW) */}
+                    {/* Layer 5: Agents (Operators & Supervisor) */}
+                <Group>
+                    {/* Render Supervisor */}
                     {supervisor && (
                         <SupervisorComp supervisor={supervisor} />
                     )}
 
+                    {/* Render Operators */}
+                    {Object.values(operatorsWithFatigue).map((op: any) => (
+                        <OperatorComp key={op.id} operator={op} />
+                    ))}
+                     
+                    {/* Render Fatigue Bars (for non-visible operators to show state) */}
+                    {Object.values(operatorsWithFatigue).map((op) => (
+                        <FatigueBar 
+                            key={`fatigue-${op.id}`} 
+                            x={op.x} 
+                            y={op.y - 45} // Higher up
+                            fatigue={op.fatigue}
+                            onBreak={op.on_break}
+                        />
+                    ))}
+                </Group>    
                     {/* Cameras */}
                     {liveCameras?.map((cam: CameraData) => (
                         <CameraComp key={cam.id} camera={cam} />
@@ -591,8 +593,8 @@ const OperatorComp: React.FC<{ operator: { id: string; name: string; x: number; 
         groupRef.current.to({
             x: operator.x,
             y: operator.y,
-            duration: 0.8,
-            easing: Konva.Easings.EaseInOut,
+            duration: 0.6, // Slight buffer over 0.5s tick rate
+            easing: Konva.Easings.Linear,
         });
     }, [operator.x, operator.y]);
 
@@ -643,8 +645,25 @@ const SupervisorComp: React.FC<SupervisorCompProps> = ({ supervisor }) => {
     
     const fillColor = statusColors[supervisor.status] || '#8B5CF6';
     
+    const groupRef = useRef<any>(null);
+    
+    useEffect(() => {
+        if (!groupRef.current) return;
+        
+        groupRef.current.to({
+            x: supervisor.x,
+            y: supervisor.y,
+            duration: 0.6, // Matches operator buffer
+            easing: Konva.Easings.Linear,
+        });
+    }, [supervisor.x, supervisor.y]);
+    
     return (
-        <Group x={supervisor.x} y={supervisor.y}>
+        <Group 
+            ref={groupRef}
+            x={supervisor.x}
+            y={supervisor.y}
+        >
             {/* Outer ring to distinguish from operators */}
             <Circle 
                 radius={14} 
