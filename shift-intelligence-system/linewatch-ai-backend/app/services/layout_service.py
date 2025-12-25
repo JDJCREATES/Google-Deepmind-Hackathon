@@ -166,39 +166,44 @@ class LayoutService:
         cam_right_x = prod_end_x - 10
         cam_center_x = (prod_start_x + prod_end_x) / 2
         
-        # Cam 1: Top-Left (Looking Down-Right)
+        # Cameras positioned to point toward center of operator zone
+        # Operator zone center: ~(690, 310)
+        # Angles calculated to make cameras face inward
+        # FOV and range reduced to create coverage gaps (AI can recommend more cameras)
+        
+        # Cam 1: Top-Left → point toward center-right-down
         layout["cameras"].append({
             "id": "cam_01", "label": "CAM-01", "lines_covered": [1,2,3,4],
-            "x": cam_left_x - 50, "y": cam_top_y, "rotation": 315, 
-            "fov": 80, "range": 300, "status": "active"
+            "x": cam_left_x - 50, "y": cam_top_y, "rotation": 26, 
+            "fov": 80, "range": 250, "status": "active"
         })
         
-        # Cam 2: Top-Right (Looking Down-Left)
+        # Cam 2: Top-Right → point toward center-left-down
         layout["cameras"].append({
             "id": "cam_02", "label": "CAM-02", "lines_covered": [17,18,19,20],
-            "x": cam_right_x + 20, "y": cam_top_y, "rotation": 45, 
-            "fov": 80, "range": 300, "status": "active"
+            "x": cam_right_x + 20, "y": cam_top_y, "rotation": 154, 
+            "fov": 80, "range": 250, "status": "active"
         })
         
-        # Cam 3: Bottom-Left (Looking Up-Right)
+        # Cam 3: Bottom-Left → point toward center-right-up
         layout["cameras"].append({
             "id": "cam_03", "label": "CAM-03", "lines_covered": [5,6,7,8],
-            "x": cam_left_x - 50, "y": cam_bot_y, "rotation": 225, 
-            "fov": 80, "range": 300, "status": "active"
+            "x": cam_left_x - 50, "y": cam_bot_y, "rotation": 342, 
+            "fov": 80, "range": 250, "status": "active"
         })
         
-        # Cam 4: Bottom-Right (Looking Up-Left)
+        # Cam 4: Bottom-Right → point toward center-left-up
         layout["cameras"].append({
             "id": "cam_04", "label": "CAM-04", "lines_covered": [13,14,15,16],
-            "x": cam_right_x + 20, "y": cam_bot_y, "rotation": 135, 
-            "fov": 80, "range": 300, "status": "active"
+            "x": cam_right_x + 20, "y": cam_bot_y, "rotation": 198, 
+            "fov": 80, "range": 250, "status": "active"
         })
         
-        # Cam 5: Top-Center (Looking Straight Down)
+        # Cam 5: Top-Center → point straight down at operators
         layout["cameras"].append({
             "id": "cam_05", "label": "CAM-05", "lines_covered": [9,10,11,12],
-            "x": cam_center_x, "y": cam_top_y, "rotation": 0, 
-            "fov": 95, "range": 300, "status": "active"
+            "x": cam_center_x, "y": cam_top_y, "rotation": 90, 
+            "fov": 90, "range": 280, "status": "active"
         })
         
         # RESTORED: Operator Generation

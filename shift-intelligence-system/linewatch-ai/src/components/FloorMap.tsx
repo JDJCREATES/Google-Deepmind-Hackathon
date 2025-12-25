@@ -114,7 +114,6 @@ const FloorMap: React.FC = () => {
     const { 
         layout, 
         fetchLayout, 
-        activeOperators, 
         cameraStates, 
         machineStates,
         // Production System (NEW)
@@ -192,11 +191,8 @@ const FloorMap: React.FC = () => {
 
     const { zones, lines, cameras, operators, conveyors } = layout as any;
     
-    // Merge static layout with live state
-    const liveOperators = operators?.map((op: OperatorData) => ({
-        ...op,
-        ...(activeOperators[op.id] || {})
-    }));
+    // Note: liveOperators from static layout is no longer used - we render from dynamic store
+    // for fog-of-war camera visibility
 
     const liveCameras = cameras?.map((cam: CameraData) => ({
         ...cam,
@@ -262,8 +258,8 @@ const FloorMap: React.FC = () => {
                         <MachineStack key={line.id} machine={line} productionState={line.productionState} />
                     ))}
 
-                    {/* Operators */}
-                    {liveOperators?.map((op: OperatorData) => (
+                    {/* Operators - Render from DYNAMIC store only (fog of war) */}
+                    {Object.values(operatorsWithFatigue).map((op) => (
                         <OperatorComp key={op.id} operator={op} />
                     ))}
                     
@@ -583,10 +579,10 @@ const MachineStack: React.FC<{
 };
 
 // =============================================================================
-// OPERATOR COMPONENT
+// OPERATOR COMPONENT (accepts Operator from store OR OperatorData from layout)
 // =============================================================================
 
-const OperatorComp: React.FC<{ operator: OperatorData }> = ({ operator }) => {
+const OperatorComp: React.FC<{ operator: { id: string; name: string; x: number; y: number; status: string } }> = ({ operator }) => {
     const groupRef = useRef<any>(null);
     
     useEffect(() => {
@@ -605,6 +601,7 @@ const OperatorComp: React.FC<{ operator: OperatorData }> = ({ operator }) => {
     if (operator.status === 'moving') fillColor = THEME.operator.moving;
     if (operator.status === 'inspecting') fillColor = '#8B5CF6';
     if (operator.status === 'working') fillColor = THEME.operator.active;
+    if (operator.status === 'on_break') fillColor = '#0EA5E9'; // Blue for on break
     
     return (
         <Group 
@@ -731,17 +728,21 @@ const FatigueBar: React.FC<FatigueBarProps> = ({ x, y, fatigue, onBreak }) => {
         );
     }
     
-    // Color based on fatigue level
+    // Convert fatigue to efficiency (100 - fatigue)
+    // Efficiency starts at 100% and decreases as fatigue increases
+    const efficiency = 100 - fatigue;
+    
+    // Color based on efficiency level (inverted from fatigue)
     const getColor = (level: number) => {
-        if (level < 40) return '#10B981';  // Green - fresh
-        if (level < 70) return '#F59E0B';  // Amber - getting tired
-        return '#EF4444';  // Red - exhausted
+        if (level > 60) return '#10B981';  // Green - high efficiency
+        if (level > 30) return '#F59E0B';  // Amber - getting tired
+        return '#EF4444';  // Red - low efficiency
     };
     
     const barWidth = 30;
     const barHeight = 4;
-    const fillWidth = (fatigue / 100) * barWidth;
-    const color = getColor(fatigue);
+    const fillWidth = (efficiency / 100) * barWidth;
+    const color = getColor(efficiency);
     
     return (
         <Group x={x} y={y - 18}>
@@ -756,7 +757,7 @@ const FatigueBar: React.FC<FatigueBarProps> = ({ x, y, fatigue, onBreak }) => {
                 stroke="#475569"
                 strokeWidth={0.5}
             />
-            {/* Fill */}
+            {/* Fill (efficiency) */}
             <Rect
                 x={-barWidth / 2}
                 y={0}
@@ -765,10 +766,10 @@ const FatigueBar: React.FC<FatigueBarProps> = ({ x, y, fatigue, onBreak }) => {
                 fill={color}
                 cornerRadius={2}
             />
-            {/* Percentage text (only if > 50%) */}
-            {fatigue > 50 && (
+            {/* Percentage text (only if efficiency < 50%) */}
+            {efficiency < 50 && (
                 <Text
-                    text={`${Math.round(fatigue)}%`}
+                    text={`${Math.round(efficiency)}%`}
                     fontSize={6}
                     fontFamily="Inter, sans-serif"
                     fill="#E2E8F0"
@@ -836,10 +837,13 @@ const ConveyorComp: React.FC<{ conveyor: ConveyorData }> = ({ conveyor }) => {
 // =============================================================================
 
 const CameraComp: React.FC<{ camera: CameraData }> = ({ camera }) => {
-    const isActive = camera.status === 'active';
+    // Use status color from WebSocket if available, otherwise default
+    const statusColor = (camera as any).color || THEME.camera.cone;
+    const isDetecting = (camera as any).status === 'detecting' || 
+                        (camera as any).status === 'critical' || 
+                        (camera as any).status === 'maintenance';
     const range = camera.range || 100;
     const fov = camera.fov || 60;
-    const coneColor = isActive ? THEME.camera.active : THEME.camera.cone;
 
     return (
         <Group x={camera.x} y={camera.y} rotation={camera.rotation}>
@@ -848,20 +852,20 @@ const CameraComp: React.FC<{ camera: CameraData }> = ({ camera }) => {
                 sides={3}
                 radius={8}
                 fill={THEME.camera.body}
-                stroke={isActive ? THEME.camera.active : '#475569'}
-                strokeWidth={1}
+                stroke={isDetecting ? statusColor : '#475569'}
+                strokeWidth={1.5}
                 rotation={180}
             />
-            {/* Vision cone */}
+            {/* Vision cone - rotation now handled by Group */}
             <Arc
                 innerRadius={0}
                 outerRadius={range}
                 angle={fov}
-                rotation={90 - (fov/2)}
-                fill={coneColor}
-                opacity={isActive ? 0.2 : 0.05}
-                stroke={isActive ? coneColor : 'transparent'}
-                strokeWidth={1}
+                rotation={-(fov/2)}  // Center the arc around 0° (right direction)
+                fill={statusColor}
+                opacity={isDetecting ? 0.25 : 0.08}
+                stroke={isDetecting ? statusColor : 'transparent'}
+                strokeWidth={isDetecting ? 1.5 : 0.5}
             />
         </Group>
     );

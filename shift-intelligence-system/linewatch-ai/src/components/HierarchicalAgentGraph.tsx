@@ -151,17 +151,17 @@ const HierarchicalAgentGraph: React.FC = () => {
         const handleMessage = (event: MessageEvent) => {
             try {
                 const message = JSON.parse(event.data);
-                console.log('[HierarchicalAgentGraph] WebSocket message:', message.type, message.data);
+
                 
                 // Handle thought bubbles
                 if (message.type === 'agent_thinking') {
                     const { agent, thought } = message.data;
-                    console.log('[ThoughtBubble] Creating bubble for agent:', agent, 'thought:', thought);
+
                     const bubbleId = `bubble-${Date.now()}-${Math.random()}`;
                     
                     // Add horizontal offset variation (-40 to +40 pixels)
                     const offsetX = (Math.random() - 0.5) * 80;
-                    console.log('[Bubble] Creating bubble with offsetX:', offsetX);
+
                     
                     // Auto-remove after 12 seconds
                     const timeoutId = window.setTimeout(() => {
@@ -190,11 +190,11 @@ const HierarchicalAgentGraph: React.FC = () => {
                     
                     // Set this agent as active
                     setCurrentActiveAgent(agent);
-                    console.log('[ActiveAgent] Set active agent to:', agent);
+
                     
                     // Auto-reset after 5 seconds (increased from 3)
                     activeAgentTimeoutRef.current = setTimeout(() => {
-                        console.log('[ActiveAgent] Resetting active agent from:', agent);
+
                         setCurrentActiveAgent(null);
                         activeAgentTimeoutRef.current = null;
                     }, 5000);
@@ -203,7 +203,7 @@ const HierarchicalAgentGraph: React.FC = () => {
                 // Handle token stats
                 if (message.type === 'agent_stats_update') {
                     const { agent, input_tokens, output_tokens } = message.data;
-                    console.log('[TokenStats] Update for agent:', agent, 'in:', input_tokens, 'out:', output_tokens);
+
                     setAgentTokens(prev => {
                         const updated = {
                             ...prev,
@@ -212,7 +212,7 @@ const HierarchicalAgentGraph: React.FC = () => {
                                 output: output_tokens
                             }
                         };
-                        console.log('[TokenStats] Updated state:', updated);
+
                         return updated;
                     });
                 }
@@ -223,7 +223,7 @@ const HierarchicalAgentGraph: React.FC = () => {
 
         // Access the WebSocket from useStore
         const ws = (window as any).__agentWebSocket;
-        console.log('[HierarchicalAgentGraph] WebSocket instance:', ws);
+
         if (ws) {
             ws.addEventListener('message', handleMessage);
             return () => {
@@ -234,13 +234,13 @@ const HierarchicalAgentGraph: React.FC = () => {
                 }
             };
         } else {
-            console.warn('[HierarchicalAgentGraph] No WebSocket instance found on window.__agentWebSocket');
+
         }
     }, []);
 
     // Initialize nodes
     useEffect(() => {
-        console.log('[Nodes] Updating nodes. Active agent:', activeAgent, 'Token data:', agentTokens);
+
         
         const agentNodes = [
             {
@@ -339,8 +339,8 @@ const HierarchicalAgentGraph: React.FC = () => {
                 id: bubble.id,
                 type: 'thoughtBubble',
                 position: { 
-                    x: position.x + (bubble.offsetX || 0), // Apply horizontal offset to position
-                    y: position.y - 100 - (agentBubblesBefore * 60) // Stack vertically with 60px spacing
+                    x: position.x + 100 + (bubble.offsetX || 0), // Spawn to the right of agent node
+                    y: position.y + 60 + (agentBubblesBefore * 60) // Spawn below agent node, stack downward
                 },
                 data: {
                     text: bubble.text,

@@ -152,14 +152,44 @@ class BaseAgent(ABC):
         """Track token usage from LLM response and broadcast stats."""
         try:
             # Extract token usage from response metadata
-            # For LangChain/Gemini, usage is in response_metadata
+            # For LangChain/Gemini, usage_metadata is a direct attribute on the message
             messages = result.get("messages", [])
             if messages:
                 last_message = messages[-1]
-                usage = getattr(last_message, 'response_metadata', {}).get('usage', {})
                 
-                input_tokens = usage.get('prompt_tokens', 0) or usage.get('input_tokens', 0)
-                output_tokens = usage.get('completion_tokens', 0) or usage.get('output_tokens', 0)
+                input_tokens = 0
+                output_tokens = 0
+                
+                # Method 1: Check for usage_metadata attribute (Google Gemini style)
+                usage_metadata = getattr(last_message, 'usage_metadata', None)
+                if usage_metadata:
+                    # Google Gemini uses these field names
+                    input_tokens = getattr(usage_metadata, 'prompt_token_count', 0) or \
+                                   getattr(usage_metadata, 'input_tokens', 0) or \
+                                   usage_metadata.get('prompt_token_count', 0) if isinstance(usage_metadata, dict) else 0
+                    output_tokens = getattr(usage_metadata, 'candidates_token_count', 0) or \
+                                    getattr(usage_metadata, 'output_tokens', 0) or \
+                                    usage_metadata.get('candidates_token_count', 0) if isinstance(usage_metadata, dict) else 0
+                
+                # Method 2: Check response_metadata.usage (OpenAI/fallback style)
+                if not (input_tokens or output_tokens):
+                    response_metadata = getattr(last_message, 'response_metadata', {})
+                    usage = response_metadata.get('usage', {}) if isinstance(response_metadata, dict) else {}
+                    
+                    # Try various field name conventions
+                    input_tokens = usage.get('prompt_tokens', 0) or \
+                                   usage.get('input_tokens', 0) or \
+                                   usage.get('prompt_token_count', 0)
+                    output_tokens = usage.get('completion_tokens', 0) or \
+                                    usage.get('output_tokens', 0) or \
+                                    usage.get('candidates_token_count', 0)
+                
+                # Method 3: Check token_usage in response_metadata (some versions)
+                if not (input_tokens or output_tokens):
+                    response_metadata = getattr(last_message, 'response_metadata', {})
+                    if isinstance(response_metadata, dict):
+                        input_tokens = response_metadata.get('prompt_token_count', 0)
+                        output_tokens = response_metadata.get('candidates_token_count', 0)
                 
                 if input_tokens or output_tokens:
                     self.total_input_tokens += input_tokens
@@ -183,7 +213,9 @@ class BaseAgent(ABC):
                         }
                     })
                     
-                    self.logger.debug(f"📊 Token stats: {agent_id} - In: {self.total_input_tokens}, Out: {self.total_output_tokens}")
+                    self.logger.info(f"📊 Token stats: {agent_id} - In: {input_tokens} (total: {self.total_input_tokens}), Out: {output_tokens} (total: {self.total_output_tokens})")
+                else:
+                    self.logger.debug(f"No token usage found in message. Metadata: {getattr(last_message, 'usage_metadata', 'N/A')}, Response: {getattr(last_message, 'response_metadata', 'N/A')}")
         except Exception as e:
             self.logger.debug(f"Failed to track tokens: {e}")
             pass  # Non-critical, don't fail reasoning

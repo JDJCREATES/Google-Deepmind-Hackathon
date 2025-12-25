@@ -154,7 +154,7 @@ export const useStore = create<State>((set, get) => ({
                 // HIGH-FREQUENCY UPDATES (Don't log to activity feed)
                 // =============================================================
                 
-                // Operator position updates
+                // Operator position updates (individual, for backwards compat)
                 if (message.type === 'operator_update') {
                     set(state => ({
                         activeOperators: {
@@ -167,6 +167,15 @@ export const useStore = create<State>((set, get) => ({
                             [message.data.id]: message.data
                         }
                     }));
+                    return;
+                }
+                
+                // FOG OF WAR: Visibility sync - REPLACES operators state
+                // Only operators visible to cameras will appear
+                if (message.type === 'visibility_sync') {
+                    set({
+                        operators: message.data.operators || {}
+                    });
                     return;
                 }
 
@@ -261,6 +270,30 @@ export const useStore = create<State>((set, get) => ({
                 // Supervisor position and status update
                 if (message.type === 'supervisor_update') {
                     set({ supervisor: message.data });
+                    return;
+                }
+                
+                // Camera status update (color-coded visibility)
+                if (message.type === 'camera_status') {
+                    set(state => ({
+                        cameraStates: {
+                            ...state.cameraStates,
+                            [message.data.camera_id]: message.data
+                        }
+                    }));
+                    return;
+                }
+                
+                // Shift status update
+                if (message.type === 'shift_status') {
+                    // Could add shift tracking state here if needed
+                    return;
+                }
+                
+                // Shift change event
+                if (message.type === 'shift_change') {
+                    // Clear operators on shift change, new ones will come via operator_update
+                    set({ operators: {} });
                     return;
                 }
                 

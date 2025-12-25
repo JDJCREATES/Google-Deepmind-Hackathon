@@ -273,8 +273,11 @@ class SimulationService:
         # =================================================================
         # SUPERVISOR
         # =================================================================
-        office_x = 100
-        office_y = 100
+        # Supervisor spawns in offices (bottom-right area)
+        # Offices are at: x = canvas_w - 100, y = canvas_h * 0.6
+        office_x = self.canvas_width - 100 + 50  # Center of office area
+        office_y = int(self.canvas_height * 0.7)  # Middle of office zone
+        
         self.supervisor = {
             "id": "SUP-01",
             "name": "Supervisor",
@@ -286,7 +289,9 @@ class SimulationService:
             "target_y": office_y,
             "assigned_operator_id": None,
             "path": [],
-            "path_index": 0
+            "path_index": 0,
+            "office_x": office_x,  # Store office location
+            "office_y": office_y
         }
         
         # Cameras for detection logic
@@ -395,7 +400,8 @@ class SimulationService:
                     "break_requested": False,
                     "path": [],
                     "path_index": 0,
-                    "is_active": (shift_name == "A")  # Only Shift A starts active
+                    "is_active": (shift_name == "A"),  # Only Shift A starts active
+                    "visible_to_cameras": False  # Camera visibility tracking
                 }
                 self.all_operators.append(operator)
         
@@ -517,10 +523,23 @@ class SimulationService:
         if random.random() < (settings.event_probability_safety_violation / 5):
             events.append(self._trigger_safety_violation())
         
-        # 9. BROADCAST OPERATOR UPDATES (only active operators)
+        # 9. FOG OF WAR - Visibility Sync (RE-ENABLED with fixed camera detection)
+        # Cameras now have proper range (400px) and angles to detect operators
+        visible_operator_ids = []
+        visible_operators_data = {}
         for op in self.operators:
-            if op.get("is_active", True):
-                events.append({"type": "operator_update", "data": op})
+            if op.get("is_active", True) and op.get("visible_to_cameras", False):
+                visible_operator_ids.append(op["id"])
+                visible_operators_data[op["id"]] = op
+        
+        # Send visibility sync - frontend will REPLACE operators state with this
+        events.append({
+            "type": "visibility_sync",
+            "data": {
+                "visible_operator_ids": visible_operator_ids,
+                "operators": visible_operators_data
+            }
+        })
         
         # 10. BROADCAST SUPERVISOR UPDATE
         events.append({"type": "supervisor_update", "data": self.supervisor})
@@ -960,9 +979,10 @@ class SimulationService:
             operator["current_action"] = "resting"
             logger.info(f"✅ Supervisor relieved {operator['name']}, now on break")
             
-            # Supervisor returns to office
-            office_x = 100
-            office_y = 100
+            # Supervisor returns to office using stored coordinates
+            office_x = self.supervisor.get("office_x", self.canvas_width - 50)
+            office_y = self.supervisor.get("office_y", int(self.canvas_height * 0.7))
+            
             path = self.pathfinding.find_path(
                 self.supervisor["x"],
                 self.supervisor["y"],
@@ -1001,18 +1021,30 @@ class SimulationService:
     # =========================================================================
     
     def _check_cameras(self) -> List[Dict[str, Any]]:
-        """Check if any operator is inside a camera's vision cone."""
+        """Check camera FOV and update operator visibility + camera status colors."""
         events = []
+        
+        # Reset all operator visibility
+        for op in self.operators:
+            op["visible_to_cameras"] = False
+        
+        # Check each camera
         for cam in self.cameras:
             cam_x, cam_y = cam["x"], cam["y"]
             cam_angle = cam["rotation"]
             cam_fov = cam.get("fov", 60)
             cam_range = cam.get("range", 200)
             
-            detected = False
-            detection_color = "#FBBF24"  # Default amber
+            detected_operators = []
+            camera_status = "idle"
+            camera_color = "#64748B"  # Default gray (idle)
+            detection_type = "none"
             
+            # Check for operators in FOV
             for op in self.operators:
+                if not op.get("is_active", True):
+                    continue
+                
                 dx = op["x"] - cam_x
                 dy = op["y"] - cam_y
                 dist = math.sqrt(dx * dx + dy * dy)
@@ -1020,25 +1052,55 @@ class SimulationService:
                 if dist > cam_range:
                     continue
                 
+                # Check if in FOV cone
+                # atan2 returns angle in radians, convert to degrees
+                # In canvas coords: 0° = right, 90° = down, 180° = left, 270° = up
                 angle_to_op = math.degrees(math.atan2(dy, dx))
-                angle_diff = (angle_to_op - (cam_angle - 90)) % 360
-                if angle_diff > 180:
+                
+                # Calculate angle difference (cam_angle is already in same coord system)
+                angle_diff = angle_to_op - cam_angle
+                
+                # Normalize to -180 to 180
+                while angle_diff > 180:
                     angle_diff -= 360
+                while angle_diff < -180:
+                    angle_diff += 360
                 
                 if abs(angle_diff) < (cam_fov / 2):
-                    detected = True
+                    # Operator is visible!
+                    op["visible_to_cameras"] = True
+                    detected_operators.append(op["id"])
+                    
+                    # Determine camera color based on priority
                     if op.get("current_action") == "VIOLATION":
-                        detection_color = "#EF4444"  # Red
+                        camera_status = "critical"
+                        camera_color = "#EF4444"  # Red - Safety violation
+                        detection_type = "violation"
+                    elif "Fixing" in op.get("current_action", ""):
+                        if camera_status not in ["critical"]:
+                            camera_status = "maintenance"
+                            camera_color = "#F97316"  # Orange - Maintenance
+                            detection_type = "maintenance"
+                    elif camera_status not in ["critical", "maintenance"]:
+                        camera_status = "detecting"
+                        camera_color = "#FBBF24"  # Yellow - Person detected
+                        detection_type = "person"
             
-            if detected:
-                events.append({
-                    "type": "camera_detection",
-                    "data": {
-                        "camera_id": cam["id"],
-                        "status": "detected",
-                        "color": detection_color
-                    }
-                })
+            # Broadcast camera status
+            events.append({
+                "type": "camera_status",
+                "data": {
+                    "camera_id": cam["id"],
+                    "status": camera_status,
+                    "color": camera_color,
+                    "detected_operators": detected_operators,
+                    "detection_type": detection_type,
+                    "operator_count": len(detected_operators)
+                }
+            })
+        
+        # Supervisor is always visible (has radio/tracking)
+        # No need to mark supervisor as visible since it's broadcast separately
         
         return events
     
