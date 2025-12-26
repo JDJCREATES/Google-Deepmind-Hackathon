@@ -192,11 +192,25 @@ class BaseAgent(ABC):
             if not actions:
                 return
 
+            agent_id = self.agent_name.replace("Agent", "").lower()
+            
+            # Broadcast structured action event
             await manager.broadcast({
                 "type": "agent_action",
                 "data": {
-                    "agent": self.agent_name.replace("Agent", "").lower(),
+                    "agent": agent_id,
                     "actions": actions,
+                    "timestamp": datetime.now().isoformat()
+                }
+            })
+            
+            # Also broadcast a clear "decision made" thought bubble
+            decision_summary = f"✓ Decision: {', '.join(actions[:2])}" + (" +" + str(len(actions)-2) + " more" if len(actions) > 2 else "")
+            await manager.broadcast({
+                "type": "agent_thinking",
+                "data": {
+                    "agent": agent_id,
+                    "thought": decision_summary,
                     "timestamp": datetime.now().isoformat()
                 }
             })

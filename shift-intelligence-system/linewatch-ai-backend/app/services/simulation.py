@@ -691,7 +691,8 @@ class SimulationService:
                 
                 # === LARGE BOX COMPLETE ===
                 if prod_state["elapsed_time"] >= prod_state["cycle_time"]:
-                    await self._drop_large_box(line_id, prod_state)
+                    box_event = self._drop_large_box(line_id, prod_state)
+                    events.append(box_event)
                     self._reset_production_cycle(line_id, prod_state)
             
             # Broadcast production state
@@ -719,7 +720,7 @@ class SimulationService:
         prod_state["small_boxes_per_large"] = random.randint(small_min, small_max)
         prod_state["cycle_time"] = base_time * random.uniform(0.8, 1.2)
     
-    async def _drop_large_box(self, line_id: int, prod_state: Dict[str, Any]):
+    def _drop_large_box(self, line_id: int, prod_state: Dict[str, Any]) -> Dict[str, Any]:
         """Create a large box on the conveyor from the machine."""
         box_id = f"box_{self.next_box_id}"
         self.next_box_id += 1
@@ -738,12 +739,13 @@ class SimulationService:
         }
         self.conveyor_boxes.append(box)
         
-        await manager.broadcast({
+        logger.debug(f"📦 Large box dropped from Line {line_id}: {prod_state['product_type']}")
+        
+        # Return event for batching instead of broadcasting directly
+        return {
             "type": "large_box_dropped",
             "data": box
-        })
-        
-        logger.debug(f"📦 Large box dropped from Line {line_id}: {prod_state['product_type']}")
+        }
     
     async def _tick_conveyor(self, events: List[Dict[str, Any]]):
         """Move boxes on conveyor towards warehouse."""
@@ -756,7 +758,8 @@ class SimulationService:
             
             if box["x"] <= warehouse_x:
                 # Arrived at warehouse
-                await self._receive_box_at_warehouse(box)
+                warehouse_event = self._receive_box_at_warehouse(box)
+                events.append(warehouse_event)
                 boxes_to_remove.append(box)
             else:
                 # Still moving
@@ -774,12 +777,15 @@ class SimulationService:
         for box in boxes_to_remove:
             self.conveyor_boxes.remove(box)
     
-    async def _receive_box_at_warehouse(self, box: Dict[str, Any]):
+    def _receive_box_at_warehouse(self, box: Dict[str, Any]) -> Dict[str, Any]:
         """Add box to warehouse inventory."""
         product_type = box["product_type"]
         self.warehouse_inventory[product_type] += 1
         
-        await manager.broadcast({
+        logger.debug(f"📥 Box arrived at warehouse: {product_type} (total: {self.warehouse_inventory[product_type]})")
+        
+        # Return event for batching
+        return {
             "type": "box_arrived_warehouse",
             "data": {
                 "id": box["id"],
@@ -787,9 +793,7 @@ class SimulationService:
                 "color": box["color"],
                 "total": self.warehouse_inventory[product_type],
             }
-        })
-        
-        logger.debug(f"📥 Box arrived at warehouse: {product_type} (total: {self.warehouse_inventory[product_type]})")
+        }
     
     # =========================================================================
     # AI AGENT INTERFACE
@@ -1378,9 +1382,9 @@ class SimulationService:
             
             # Broadcast camera status
             events.append({
-                "type": "camera_status",
+                "type": "camera_update",
                 "data": {
-                    "camera_id": cam["id"],
+                    "id": cam["id"],  # Frontend expects "id" not "camera_id"
                     "status": camera_status,
                     "color": camera_color,
                     "detected_operators": detected_operators,
