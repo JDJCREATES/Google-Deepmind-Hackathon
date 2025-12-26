@@ -44,7 +44,7 @@ function App() {
             </div>
             <div>
                 <h1 className="font-bold text-base leading-tight tracking-tight text-stone-100">LINEWATCH AI</h1>
-                <p className="text-[9px] text-stone-500 font-mono tracking-wider">EPISTEMIC REASONING • GEN-3</p>
+                <p className="text-[9px] text-stone-500 font-mono tracking-wider">EPISTEMIC REASONING • GEMINI-3</p>
             </div>
             
             <div className="h-6 w-px bg-stone-700 mx-3" />

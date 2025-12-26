@@ -24,21 +24,20 @@ interface MaintenanceCrewProps {
 const MaintenanceCrewComp: React.FC<MaintenanceCrewProps> = ({ crew }) => {
     const groupRef = useRef<any>(null);
     
-    // Animate position updates
+    // IMMEDIATE position update (no animation) to prevent ghost movement
     useEffect(() => {
         if (!groupRef.current) return;
-        
-        groupRef.current.to({
-            x: crew.x,
-            y: crew.y,
-            duration: 0.5,
-            easing: Konva.Easings.Linear,
-        });
+        groupRef.current.position({ x: crew.x, y: crew.y });
     }, [crew.x, crew.y]);
 
     let fillColor = THEME.crew.idle;
     if (crew.status === 'moving_to_machine' || crew.status === 'returning') fillColor = THEME.crew.moving;
     if (crew.status === 'working') fillColor = THEME.crew.repairing;
+    
+    // Safety check for invalid coordinates
+    if (typeof crew.x !== 'number' || typeof crew.y !== 'number' || isNaN(crew.x) || isNaN(crew.y)) {
+        return null;
+    }
     
     return (
         <Group 

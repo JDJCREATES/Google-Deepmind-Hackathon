@@ -41,14 +41,10 @@ const OperatorComp: React.FC<OperatorProps> = ({ operator }) => {
     const groupRef = useRef<any>(null);
     
     useEffect(() => {
-        if (!groupRef.current) return;
+        if (!groupRef.current || typeof operator.x !== 'number' || typeof operator.y !== 'number') return;
         
-        groupRef.current.to({
-            x: operator.x,
-            y: operator.y,
-            duration: 0.5, // Sync with backend tick
-            easing: Konva.Easings.Linear,
-        });
+        // IMMEDIATE position update (no animation) to prevent ghost movement after backend disconnect
+        groupRef.current.position({ x: operator.x, y: operator.y });
     }, [operator.x, operator.y]);
 
     let fillColor = THEME.operator.idle;
@@ -59,6 +55,16 @@ const OperatorComp: React.FC<OperatorProps> = ({ operator }) => {
     // Use stored color if available (for precise visual sync)
     // NOTE: This might be redundant if we just map status correctly
     
+    // Fog of War: Only render if visible to cameras
+    if (!(operator as any).visible_to_cameras) {
+        return null;
+    }
+    
+    // Safety check for invalid coordinates
+    if (typeof operator.x !== 'number' || typeof operator.y !== 'number' || isNaN(operator.x) || isNaN(operator.y)) {
+        return null;
+    }
+
     return (
         <Group 
             ref={groupRef}

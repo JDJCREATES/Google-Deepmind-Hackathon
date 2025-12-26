@@ -53,10 +53,15 @@ export interface CameraData {
 export interface OperatorData {
     id: string;
     name: string;
-    x: number;
-    y: number;
+    x?: number;  // Optional for Fog of War - only set when visible
+    y?: number;  // Optional for Fog of War - only set when visible
     status: string;
     assigned_lines: number[];
+    visible_to_cameras?: boolean; // Fog of War visibility flag
+    fatigue?: number;
+    on_break?: boolean;
+    break_requested?: boolean;
+    current_action?: string;
 }
 
 export interface ConveyorData {
@@ -193,7 +198,98 @@ export const useStore = create<State>((set, get) => ({
             try {
                 const message = JSON.parse(event.data);
                 
-                // Active Operators (Movement)
+                // Handle batched updates from backend (reduces WebSocket overhead)
+                if (message.type === 'batch_update') {
+                    const events = message.data.events || [];
+                    events.forEach((evt: any) => {
+                        // Recursively handle each event as if it came separately
+                        socket.onmessage?.({ data: JSON.stringify(evt) } as MessageEvent);
+                    });
+                    return;
+                }
+                
+                // Bulk Operator Data Update (Main Backend Event) - STATUS ONLY
+                if (message.type === 'operator_data_update') {
+                    set(state => {
+                        const newOperators = { ...state.operators };
+                        let hasChanges = false;
+                        
+                        Object.entries(message.data).forEach(([id, data]: [string, any]) => {
+                            const current = newOperators[id];
+                            
+                            // Only update if status or fatigue actually changed
+                            if (!current || 
+                                current.fatigue !== data.fatigue ||
+                                current.status !== data.status ||
+                                current.on_break !== data.on_break ||
+                                current.break_requested !== data.break_requested ||
+                                current.current_action !== data.current_action) {
+                                
+                                newOperators[id] = {
+                                    ...(newOperators[id] || {}), // Keep existing X/Y
+                                    ...data,                     // Update status/fatigue
+                                };
+                                hasChanges = true;
+                            }
+                        });
+                        
+                        // Only trigger update if something changed
+                        if (!hasChanges) return state;
+                        
+                        return { 
+                            operators: newOperators,
+                            activeOperators: newOperators
+                        };
+                    });
+                    return;
+                }
+                
+                // Fog of War Visibility Sync - POSITIONS ONLY
+                if (message.type === 'visibility_sync') {
+                    set(state => {
+                        const newOperators = { ...state.operators };
+                        const visibleIds = new Set(message.data.visible_operator_ids);
+                        const visibleData = message.data.operators;
+                        let hasChanges = false;
+                        
+                        // Only update operators whose visibility or position changed
+                        Object.keys(newOperators).forEach(id => {
+                            const current = newOperators[id];
+                            const isNowVisible = visibleIds.has(id);
+                            const wasVisible = current.visible_to_cameras;
+                            
+                            if (isNowVisible && visibleData[id]) {
+                                // Check if position or visibility changed
+                                const newData = visibleData[id];
+                                if (current.x !== newData.x || current.y !== newData.y || !wasVisible) {
+                                    newOperators[id] = {
+                                        ...current,
+                                        ...newData,
+                                        visible_to_cameras: true
+                                    };
+                                    hasChanges = true;
+                                }
+                            } else if (wasVisible && !isNowVisible) {
+                                // Only update if visibility changed from true to false
+                                newOperators[id] = {
+                                    ...current,
+                                    visible_to_cameras: false
+                                };
+                                hasChanges = true;
+                            }
+                            // If nothing changed, don't create a new object
+                        });
+                        
+                        // Only trigger state update if something actually changed
+                        if (hasChanges) {
+                            return { operators: newOperators };
+                        }
+                        return state;
+                    });
+                    return;
+                }
+
+                // Active Operators (Movement - Legacy/Individual)
                 if (message.type === 'operator_update') {
                     // Update the centralized operators state
                     // This handles creating new operators if they don't exist
@@ -264,7 +360,7 @@ export const useStore = create<State>((set, get) => ({
                     set(state => ({
                         machineProductionState: {
                             ...state.machineProductionState,
-                            [message.data.machine_id]: message.data
+                            [message.data.line_id]: message.data
                         }
                     }));
                     return;
@@ -297,14 +393,14 @@ export const useStore = create<State>((set, get) => ({
 
                 // LOGGING (Filtered)
                 // Avoid logging high-frequency updates
-                if (['operator_update', 'conveyor_update', 'machine_production_state', 'camera_update', 'supervisor_update', 'operator_fatigue_update', 'shift_status', 'inventory_update', 'line_status', 'maintenance_crew_update'].includes(message.type)) {
+                if (['operator_update', 'operator_data_update', 'visibility_sync', 'conveyor_update', 'machine_production_state', 'camera_update', 'supervisor_update', 'operator_fatigue_update', 'shift_status', 'inventory_update', 'line_status', 'maintenance_crew_update'].includes(message.type)) {
                     return;
                 }
                 
                 // Deduplicate Agent Thoughts
                 let description = message.data?.thought || JSON.stringify(message.data);
                 
-                if (message.type === 'agent_thought') {
+                if (message.type === 'agent_thought' || message.type === 'agent_thinking') {
                     const now = Date.now();
                     // Create a simple hash of the thought content
                     const thoughtHash = description.split('').reduce((a: number, b: string) => { a = ((a << 5) - a) + b.charCodeAt(0); return a & a }, 0);

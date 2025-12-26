@@ -33,31 +33,31 @@ PRODUCT_CATALOG: Dict[str, Dict[str, Any]] = {
     "widget_a": {
         "name": "Widget A",
         "color": "#3B82F6",  # Blue
-        "base_time": 90,      # Seconds to fill large box
+        "base_time": 70,      # Seconds to fill large box (reduced from 90)
         "small_per_large": (8, 12),  # Range of small boxes per large
     },
     "widget_b": {
         "name": "Widget B",
         "color": "#10B981",  # Green
-        "base_time": 75,
+        "base_time": 60,  # Reduced from 75
         "small_per_large": (10, 15),
     },
     "gizmo_x": {
         "name": "Gizmo X",
         "color": "#F59E0B",  # Amber
-        "base_time": 120,
+        "base_time": 95,  # Reduced from 120
         "small_per_large": (6, 10),
     },
     "gizmo_y": {
         "name": "Gizmo Y",
         "color": "#EF4444",  # Red
-        "base_time": 100,
+        "base_time": 80,  # Reduced from 100
         "small_per_large": (8, 14),
     },
     "part_z": {
         "name": "Part Z",
         "color": "#8B5CF6",  # Purple
-        "base_time": 60,
+        "base_time": 50,  # Reduced from 60
         "small_per_large": (12, 18),
     },
 }
@@ -541,11 +541,11 @@ class SimulationService:
         detections = self._check_cameras()
         events.extend(detections)
         
-        # 8. RANDOM ANOMALIES
-        if random.random() < (settings.event_probability_breakdown / 5):
+        # 8. RANDOM ANOMALIES (Divisor of 10 = half as frequent as divisor of 5)
+        if random.random() < (settings.event_probability_breakdown / 10):
             events.append(self._generate_breakdown())
         
-        if random.random() < (settings.event_probability_safety_violation / 5):
+        if random.random() < (settings.event_probability_safety_violation / 10):
             events.append(self._trigger_safety_violation())
         
         # 9. BROADCAST ALL OPERATOR DATA (for UI - fatigue bars, stats, etc)
@@ -608,15 +608,23 @@ class SimulationService:
             "data": self.warehouse_inventory.copy()
         })
         
-        # Broadcast all events
-        for event in events:
-            await manager.broadcast(event)
+        # Broadcast all events in a SINGLE batched message
+        # This prevents overwhelming the WebSocket with 15-20+ messages per tick
+        if events:
+            await manager.broadcast({
+                "type": "batch_update",
+                "data": {
+                    "events": events,
+                    "timestamp": datetime.now().isoformat()
+                }
+            })
             
             # Auto-trigger investigation for critical events (ONLY if simulation is running)
             if self.is_running:
-                event_data = event.get("data", {})
-                if event_data.get("severity") in ["HIGH", "CRITICAL"]:
-                    asyncio.create_task(self._trigger_investigation(event_data))
+                for event in events:
+                    event_data = event.get("data", {})
+                    if event_data.get("severity") in ["HIGH", "CRITICAL"]:
+                        asyncio.create_task(self._trigger_investigation(event_data))
     
     # =========================================================================
     # PRODUCTION LOGIC
@@ -1475,10 +1483,10 @@ class SimulationService:
                 return
             
             await manager.broadcast({
-                "type": "agent_thought",
+                "type": "agent_thinking",
                 "data": {
-                    "source": "ORCHESTRATOR",
-                    "description": f"Initiating investigation for {event_data.get('description')}",
+                    "agent": "ORCHESTRATOR", # Frontend expects "agent", not "source" for thought bubbles
+                    "thought": f"Initiating investigation for {event_data.get('description')}", # Frontend expects "thought"
                     "timestamp": datetime.now().isoformat()
                 }
             })

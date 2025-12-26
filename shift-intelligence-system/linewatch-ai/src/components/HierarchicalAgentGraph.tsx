@@ -10,63 +10,9 @@ import 'reactflow/dist/style.css';
 import { useStore, type LogEntry } from '../store/useStore';
 import RichAgentNode from './RichAgentNode';
 
-// Thought Bubble Node Component
-const ThoughtBubbleNode: React.FC<{ data: { text: string; agentColor: string; isDragged: boolean; onClose: () => void; onDragStart: () => void } }> = ({ data }) => {
-    return (
-        <div 
-            className="pointer-events-auto cursor-move"
-            style={{
-                animation: data.isDragged ? 'none' : 'thoughtDrift 12s ease-out forwards',
-            }}
-            onMouseDown={data.onDragStart}
-        >
-            <div 
-                className="p-3 rounded-lg shadow-lg max-w-xs relative"
-                style={{ 
-                    backgroundColor: data.agentColor + '40', 
-                    borderColor: data.agentColor, 
-                    borderWidth: '1px', 
-                    borderStyle: 'solid' 
-                }}
-            >
-                {/* Close button */}
-                <button
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        data.onClose();
-                    }}
-                    className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-stone-700 hover:bg-stone-600 text-stone-300 hover:text-white flex items-center justify-center text-xs font-bold transition-colors"
-                    style={{ cursor: 'pointer' }}
-                >
-                    ×
-                </button>
-                <p className="text-xs text-stone-200 leading-tight font-medium">
-                    {data.text}
-                </p>
-            </div>
-            <style dangerouslySetInnerHTML={{__html: `
-                @keyframes thoughtDrift {
-                    0% {
-                        transform: translateY(0);
-                        opacity: 0;
-                    }
-                    10% {
-                        opacity: 1;
-                    }
-                    90% {
-                        opacity: 1;
-                    }
-                    100% {
-                        transform: translateY(-180px);
-                        opacity: 0;
-                    }
-                }
-            `}} />
-        </div>
-    );
-};
+import ThoughtBubbleNode from './ThoughtBubbleNode';
 
-// Register custom node types
+// Register custom node types OUTSIDE component to prevent warnings
 const nodeTypes = {
     richAgent: RichAgentNode,
     thoughtBubble: ThoughtBubbleNode,
@@ -156,7 +102,9 @@ const HierarchicalAgentGraph: React.FC = () => {
                 
                 // Handle thought bubbles
                 if (message.type === 'agent_thinking') {
-                    const { agent, thought } = message.data;
+                    const { agent: rawAgent, thought } = message.data;
+                    const agent = rawAgent.toLowerCase();
+                    console.log('[HierarchicalAgentGraph] Received agent_thinking:', agent, thought?.substring(0, 50));
 
                     const bubbleId = `bubble-${Date.now()}-${Math.random()}`;
                     

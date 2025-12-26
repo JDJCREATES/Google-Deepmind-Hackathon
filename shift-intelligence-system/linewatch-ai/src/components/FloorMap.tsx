@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useState, useRef } from 'react';
 import { Stage, Layer, Rect, Text, Group, Circle } from 'react-konva';
+import Konva from 'konva';
 import { useStore, type ConveyorBox, type WarehouseInventory } from '../store/useStore';
 
 import MachineStack from './map/MachineStack';
@@ -290,7 +291,8 @@ const SupervisorComp: React.FC<{ supervisor: any }> = ({ supervisor }) => {
     const groupRef = useRef<any>(null);
     useEffect(() => {
         if (!groupRef.current) return;
-        groupRef.current.to({ x: supervisor.x, y: supervisor.y, duration: 0.6, easing: 'Linear' });
+        // IMMEDIATE position update (no animation) to prevent ghost movement
+        groupRef.current.position({ x: supervisor.x, y: supervisor.y });
     }, [supervisor.x, supervisor.y]);
 
     return (
