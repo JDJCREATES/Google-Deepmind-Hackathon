@@ -176,13 +176,15 @@ def create_hypothesis_market_graph() -> StateGraph:
 
 
 def compile_hypothesis_market(
-    use_checkpointing: bool = True
+    use_checkpointing: bool = True,
+    checkpointer: Any = None
 ) -> "CompiledGraph":
     """
     Compile the hypothesis market graph for execution.
     
     Args:
         use_checkpointing: Whether to enable state persistence
+        checkpointer: Optional specific checkpointer instance (e.g. AsyncSqliteSaver)
         
     Returns:
         Compiled graph ready for .invoke() or .stream()
@@ -190,17 +192,15 @@ def compile_hypothesis_market(
     graph = create_hypothesis_market_graph()
     
     if use_checkpointing:
-        # Use SQLite persistent checkpointer
-        from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-        from app.config import settings
-        
-        checkpoint_path = settings.agent_checkpoint_db or "data/agent_checkpoints.db"
-        checkpointer = AsyncSqliteSaver.from_conn_string(checkpoint_path)
+        # Use provided checkpointer or default to MemorySaver
+        if checkpointer is None:
+            checkpointer = MemorySaver()
+            
         compiled = graph.compile(checkpointer=checkpointer)
     else:
         compiled = graph.compile()
     
-    logger.info("✅ Hypothesis market graph compiled with SQLite persistence")
+    logger.info(f"✅ Hypothesis market graph compiled (Persistence: {type(checkpointer).__name__ if use_checkpointing else 'Disabled'})")
     
     return compiled
 
@@ -215,16 +215,6 @@ async def run_hypothesis_market(
 ) -> dict:
     """
     Run a complete hypothesis market cycle.
-    
-    Args:
-        signal_id: Unique identifier for this incident
-        signal_type: Classification of the signal
-        signal_description: Human-readable description
-        signal_data: Raw data from sensors/cameras
-        thread_id: Thread ID for checkpointing
-        
-    Returns:
-        Final state after graph execution
     """
     logger.info(f"🚀 Running hypothesis market for signal: {signal_id}")
     
@@ -236,14 +226,33 @@ async def run_hypothesis_market(
         signal_data=signal_data,
     )
     
-    # Compile and run graph
-    graph = compile_hypothesis_market()
+    # Use SQLite persistence correctly with async context manager
+    from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+    from app.config import settings
     
-    config = {"configurable": {"thread_id": thread_id}}
+    checkpoint_path = settings.agent_checkpoint_db or "data/agent_checkpoints.db"
     
-    # Run graph
-    final_state = await graph.ainvoke(initial_state, config)
+    # Ensure directory exists
+    import os
+    os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
     
-    logger.info("✅ Hypothesis market cycle complete")
-    
-    return final_state
+    try:
+        async with AsyncSqliteSaver.from_conn_string(checkpoint_path) as checkpointer:
+            # Compile graph using the active checkpointer connection
+            graph = compile_hypothesis_market(use_checkpointing=True, checkpointer=checkpointer)
+            
+            config = {"configurable": {"thread_id": thread_id}}
+            
+            # Run graph
+            final_state = await graph.ainvoke(initial_state, config)
+            
+        logger.info("✅ Hypothesis market cycle complete")
+        return final_state
+        
+    except Exception as e:
+        logger.error(f"❌ Hypothesis market execution failed: {e}")
+        # Fallback to memory-only execution if DB fails
+        logger.warning("⚠️ Falling back to in-memory execution")
+        graph = compile_hypothesis_market(use_checkpointing=True) # Defaults to MemorySaver
+        config = {"configurable": {"thread_id": thread_id}}
+        return await graph.ainvoke(initial_state, config)

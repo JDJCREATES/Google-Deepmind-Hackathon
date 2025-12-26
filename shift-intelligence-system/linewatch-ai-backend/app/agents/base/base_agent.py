@@ -94,16 +94,20 @@ class BaseAgent(ABC):
             google_api_key=settings.google_api_key,
             temperature=0.7,
         )
+        # =================================================================
+        # SQLite Checkpointer (Lazy Initialization)
+        # =================================================================
+        # We use lazy initialization to properly manage the async lifecycle.
+        # The connection is created on first async call and reused thereafter.
+        self._checkpoint_path = settings.agent_checkpoint_db or "data/agent_checkpoints.db"
+        self._db_conn = None  # aiosqlite connection, created lazily
+        self._checkpointer = None  # AsyncSqliteSaver instance
+        self._agent = None  # Compiled agent, created after checkpointer init
         
-        # LangGraph agent with SQLite persistent checkpointing
-        checkpoint_path = settings.agent_checkpoint_db or "data/agent_checkpoints.db"
-        self.checkpointer = AsyncSqliteSaver.from_conn_string(checkpoint_path)
-        self.agent = create_react_agent(
-            self.llm,
-            tools=self.tools,
-            prompt=self.system_prompt,
-            checkpointer=self.checkpointer,
-        )
+        # Store config for lazy agent creation
+        self._llm = self.llm
+        self._tools = self.tools
+        self._system_prompt = system_prompt
         
         # Subagents for nested reasoning
         self.subagents: Dict[str, 'BaseAgent'] = {}
@@ -119,7 +123,66 @@ class BaseAgent(ABC):
         self.thought_signatures: list = []  # Store all thought signatures over time
         self.latest_thought_signature: str | None = None  # Most recent signature to pass back
         
-        self.logger.info(f"✅ {agent_name} initialized with Gemini 3 ({model_name})")
+        self.logger.info(f"✅ {agent_name} initialized with Gemini 3 ({model_name}) - SQLite lazy init")
+    
+    async def _ensure_agent_initialized(self):
+        """
+        Lazily initialize the SQLite checkpointer and compiled agent.
+        This is called before any async agent operation to ensure the
+        aiosqlite connection is properly established.
+        """
+        if self._agent is not None:
+            return  # Already initialized
+        
+        import aiosqlite
+        import os
+        
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(self._checkpoint_path) or ".", exist_ok=True)
+        
+        # Create persistent aiosqlite connection
+        self._db_conn = await aiosqlite.connect(self._checkpoint_path)
+        
+        # Create AsyncSqliteSaver with the live connection
+        self._checkpointer = AsyncSqliteSaver(self._db_conn)
+        
+        # Initialize the checkpointer's tables
+        await self._checkpointer.setup()
+        
+        # Compile the agent with the live checkpointer
+        self._agent = create_react_agent(
+            self._llm,
+            tools=self._tools,
+            prompt=self._system_prompt,
+            checkpointer=self._checkpointer,
+        )
+        
+        self.logger.info(f"🔌 {self.agent_name} SQLite checkpointer connected: {self._checkpoint_path}")
+    
+    @property
+    def agent(self):
+        """Get the compiled agent. Raises if not initialized yet."""
+        if self._agent is None:
+            # For sync access, return a placeholder that will fail with a helpful message
+            raise RuntimeError(
+                f"{self.agent_name}: Agent not initialized. "
+                "Call await _ensure_agent_initialized() first."
+            )
+        return self._agent
+    
+    @property
+    def checkpointer(self):
+        """Get the checkpointer (may be None if not yet initialized)."""
+        return self._checkpointer
+    
+    async def close(self):
+        """Close the SQLite connection. Call when agent is no longer needed."""
+        if self._db_conn:
+            await self._db_conn.close()
+            self._db_conn = None
+            self._checkpointer = None
+            self._agent = None
+            self.logger.info(f"🔌 {self.agent_name} SQLite connection closed")
     
     def filter_context(self, full_context: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -398,6 +461,7 @@ class BaseAgent(ABC):
             })
         
         # Invoke Gemini 3 with thinking enabled
+        await self._ensure_agent_initialized()
         result = await self.agent.ainvoke(
             {"messages": messages},
             config={
@@ -785,6 +849,7 @@ CURRENT CONTEXT:
 Did these actions have the intended effect? Verify and respond with YES or NO.
 """
         
+        await self._ensure_agent_initialized()
         result = await self.agent.ainvoke(
             {"messages": [HumanMessage(content=verification_prompt)]},
             config={"configurable": {"thread_id": f"{self.agent_name}-verify"}}

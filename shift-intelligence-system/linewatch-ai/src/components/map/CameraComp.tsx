@@ -39,7 +39,7 @@ const CameraComp: React.FC<{ camera: CameraData }> = ({ camera }) => {
         if (isDetecting && wedgeRef.current) {
              const anim = new Konva.Animation((frame) => {
                 if (!frame) return;
-                const scale = 1 + Math.sin(frame.time / 200) * 0.05;
+                const scale = 1 + Math.sin(frame.time / 400) * 0.02;
                 wedgeRef.current?.scale({ x: scale, y: scale });
             }, wedgeRef.current.getLayer());
             

@@ -1031,6 +1031,16 @@ class SimulationService:
                 if op["fatigue"] >= FATIGUE_THRESHOLD and not op["break_requested"]:
                     op["break_requested"] = True
                     logger.info(f"😓 {op['name']} is requesting a break (fatigue: {op['fatigue']:.1f}%)")
+                    
+                    # EMIT FATIGUE EVENT to trigger Staffing Agent
+                    asyncio.create_task(self._trigger_investigation({
+                        "type": "FATIGUE_ALERT",
+                        "description": f"Operator {op['name']} requesting break (fatigue: {op['fatigue']:.1f}%)",
+                        "operator_id": op["id"],
+                        "operator_name": op["name"],
+                        "fatigue_level": op["fatigue"],
+                        "severity": "MEDIUM"
+                    }))
     
     def _move_supervisor(self):
         """Handle supervisor movement and operator relief logic."""

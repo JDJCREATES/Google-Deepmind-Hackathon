@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import { api } from '../services/api';
 
 // =============================================================================
@@ -149,7 +150,9 @@ interface State {
     toggleSimulation: () => Promise<void>;
 }
 
-export const useStore = create<State>((set, get) => ({
+export const useStore = create<State>()(
+    persist(
+        (set, get) => ({
     layout: null,
     isLoading: false,
     error: null,
@@ -476,4 +479,11 @@ export const useStore = create<State>((set, get) => ({
             console.error('Failed to toggle simulation:', e);
         }
     }
-}));
+        }),
+        {
+            name: 'linewatch-logs',
+            storage: createJSONStorage(() => localStorage),
+            partialize: (state) => ({ logs: state.logs }),
+        }
+    )
+);
