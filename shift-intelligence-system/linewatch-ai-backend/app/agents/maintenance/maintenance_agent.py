@@ -46,6 +46,16 @@ class MaintenanceAgent(BaseAgent):
         
         logger.info("✅ Maintenance Agent initialized")
     
+    def filter_context(self, full_context: Dict[str, Any]) -> Dict[str, Any]:
+        """Filter context to maintenance-only data."""
+        return {
+            "machines": full_context.get("machines", {}),
+            "line_health": full_context.get("line_health", {}),
+            "maintenance_crew": full_context.get("maintenance_crew", {}),
+            "current_shift": full_context.get("current_shift"),
+        }
+    
+    
     # ========== HYPOTHESIS GENERATION ==========
     
     async def generate_hypotheses(self, signal: Dict[str, Any]) -> List[Any]:

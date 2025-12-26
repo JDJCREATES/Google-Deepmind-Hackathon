@@ -20,7 +20,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, System
 from langchain_core.tools import BaseTool
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import create_react_agent
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from app.config import settings
 from app.utils.logging import get_agent_logger
@@ -95,8 +95,9 @@ class BaseAgent(ABC):
             temperature=0.7,
         )
         
-        # LangGraph agent with in-memory checkpointing
-        self.checkpointer = MemorySaver()
+        # LangGraph agent with SQLite persistent checkpointing
+        checkpoint_path = settings.agent_checkpoint_db or "data/agent_checkpoints.db"
+        self.checkpointer = AsyncSqliteSaver.from_conn_string(checkpoint_path)
         self.agent = create_react_agent(
             self.llm,
             tools=self.tools,
@@ -119,6 +120,20 @@ class BaseAgent(ABC):
         self.latest_thought_signature: str | None = None  # Most recent signature to pass back
         
         self.logger.info(f"✅ {agent_name} initialized with Gemini 3 ({model_name})")
+    
+    def filter_context(self, full_context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Filter simulation context to only include data relevant to this agent.
+        Override in subclasses for agent-specific filtering.
+        
+        Args:
+            full_context: Complete simulation state
+            
+        Returns:
+            Filtered context with only necessary data for this agent
+        """
+        # Default: no filtering (orchestrator uses this)
+        return full_context
     
     async def _broadcast_thought(self, message: str, message_type: str = "agent_activity"):
         """Broadcast agent thought/activity to frontend via WebSocket."""

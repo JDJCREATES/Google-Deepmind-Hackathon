@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     event_probability_breakdown: float = 0.02
     event_probability_safety_violation: float = 0.03
     
+    # Agent Persistence
+    agent_checkpoint_db: str | None = None  # Defaults to data/agent_checkpoints.db
+    
     @property
     def cors_origins(self) -> List[str]:
         """Allowed CORS origins for frontend."""

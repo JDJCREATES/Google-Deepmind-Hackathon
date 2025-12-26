@@ -61,6 +61,17 @@ class ProductionAgent(BaseAgent):
 
         logger.info("✅ Production Agent initialized")
     
+    def filter_context(self, full_context: Dict[str, Any]) -> Dict[str, Any]:
+        """Filter context to production-only data (reduces size ~70%)."""
+        return {
+            "machines": full_context.get("machines", {}),
+            "lines": full_context.get("lines", {}),
+            "line_health": full_context.get("line_health", {}),
+            "warehouse_inventory": full_context.get("warehouse_inventory", {}),
+            "current_shift": full_context.get("current_shift"),
+            "shift_elapsed_hours": full_context.get("shift_elapsed_hours"),
+        }
+    
     # ========== HYPOTHESIS GENERATION ==========
     
     async def generate_hypotheses(self, signal: Dict[str, Any]) -> List[Any]:
