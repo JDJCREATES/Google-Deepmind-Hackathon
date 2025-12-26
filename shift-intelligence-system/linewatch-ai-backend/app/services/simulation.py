@@ -319,6 +319,11 @@ class SimulationService:
             "repair_timer": 0.0
         }
         
+        # =================================================================
+        # ASYNC TASK TRACKING (for proper cancellation)
+        # =================================================================
+        self.pending_tasks: set = set()  # Track spawned async tasks
+        
         logger.info(f"🏭 SimulationService initialized with {len(self.machine_production)} production lines")
         logger.info(f"👥 3-shift system: {len(self.all_operators)} total operators (5 per shift)")
     
@@ -470,14 +475,26 @@ class SimulationService:
         })
     
     async def stop(self):
-        """Stop the simulation loop."""
+        """Stop the simulation loop and all pending async tasks."""
         self.is_running = False
+        
+        # Cancel main simulation task
         if self.sim_task:
             self.sim_task.cancel()
             try:
                 await self.sim_task
             except asyncio.CancelledError:
                 pass
+        
+        # Cancel all pending investigation/agent tasks
+        if self.pending_tasks:
+            logger.info(f"🛑 Cancelling {len(self.pending_tasks)} pending async tasks...")
+            for task in self.pending_tasks:
+                if not task.done():
+                    task.cancel()
+            # Wait for all to complete (with cancellation)
+            await asyncio.gather(*self.pending_tasks, return_exceptions=True)
+            self.pending_tasks.clear()
         
         logger.info("🛑 Simulation Service STOPPED")
         await manager.broadcast({
@@ -1033,7 +1050,7 @@ class SimulationService:
                     logger.info(f"😓 {op['name']} is requesting a break (fatigue: {op['fatigue']:.1f}%)")
                     
                     # EMIT FATIGUE EVENT to trigger Staffing Agent
-                    asyncio.create_task(self._trigger_investigation({
+                    task = asyncio.create_task(self._trigger_investigation({
                         "type": "FATIGUE_ALERT",
                         "description": f"Operator {op['name']} requesting break (fatigue: {op['fatigue']:.1f}%)",
                         "operator_id": op["id"],
@@ -1041,6 +1058,9 @@ class SimulationService:
                         "fatigue_level": op["fatigue"],
                         "severity": "MEDIUM"
                     }))
+                    # Track task for cancellation on stop
+                    self.pending_tasks.add(task)
+                    task.add_done_callback(lambda t: self.pending_tasks.discard(t))
     
     def _move_supervisor(self):
         """Handle supervisor movement and operator relief logic."""

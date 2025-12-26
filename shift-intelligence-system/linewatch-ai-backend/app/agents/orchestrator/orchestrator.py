@@ -153,6 +153,7 @@ class MasterOrchestrator(BaseAgent):
         
         # Use simple invoke for now, returning dict
         try:
+            await self._ensure_agent_initialized()
             result = await self.agent.ainvoke(
                 {"messages": [{"role": "user", "content": prompt}]},
                 config={"configurable": {"thread_id": "orchestrator-decision"}}

@@ -212,6 +212,21 @@ export const useStore = create<State>()(
                     return;
                 }
                 
+                // Handle log history from backend on reconnect
+                if (message.type === 'log_history') {
+                    const historicalLogs = message.data.logs || [];
+                    set(state => {
+                        // Merge historical logs with any existing logs, avoiding duplicates
+                        const existingIds = new Set(state.logs.map(l => l.id));
+                        const newLogs = historicalLogs.filter((l: LogEntry) => !existingIds.has(l.id));
+                        return {
+                            logs: [...newLogs.reverse(), ...state.logs].slice(0, 500)
+                        };
+                    });
+                    console.log(`📜 Restored ${historicalLogs.length} logs from backend`);
+                    return;
+                }
+                
                 // Bulk Operator Data Update (Main Backend Event) - STATUS ONLY
                 if (message.type === 'operator_data_update') {
                     set(state => {
