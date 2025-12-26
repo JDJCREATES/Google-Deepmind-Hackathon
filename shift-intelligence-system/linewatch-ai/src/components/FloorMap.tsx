@@ -165,7 +165,8 @@ const FloorMap: React.FC = () => {
                         const cameraData = {
                             ...cam,
                             ...liveState, 
-                            color: liveState?.status === 'detecting' ? THEME.status.critical : THEME.camera.active
+                            // Propagate backend color if available, otherwise fallback
+                            color: liveState?.color || THEME.camera.body
                         };
                         return <CameraComp key={cam.id} camera={cameraData as any} />;
                     })}

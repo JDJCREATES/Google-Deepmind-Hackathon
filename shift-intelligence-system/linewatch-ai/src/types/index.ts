@@ -16,8 +16,15 @@ export interface Line {
     y: number;
     width: number;
     height: number;
-    orientation: 'horizontal' | 'vertical';
-    status: 'operational' | 'down' | 'maintenance' | 'bottleneck';
+    orientation?: 'horizontal' | 'vertical';
+    status: string;
+    // Backend properties
+    machine_w: number;
+    machine_h: number;
+    equip_w: number;
+    equip_h: number;
+    connector_h?: number;
+    health: number;
 }
 
 export interface Camera {
@@ -29,6 +36,7 @@ export interface Camera {
     fov: number;
     range: number;
     label: string;
+    status: string;
     is_alerting?: boolean;
 }
 
@@ -40,6 +48,8 @@ export interface FloorLayout {
     zones: Zone[];
     lines: Line[];
     cameras: Camera[];
+    conveyors: any[]; // Extended layout
+    operators: any[]; // Extended layout
 }
 
 export interface SimulationStatus {

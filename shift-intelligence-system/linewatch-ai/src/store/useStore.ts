@@ -48,6 +48,7 @@ export interface CameraData {
     range: number;
     label: string;
     status: string;
+    color?: string;
 }
 
 export interface OperatorData {
