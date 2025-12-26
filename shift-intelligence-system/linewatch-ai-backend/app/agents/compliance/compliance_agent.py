@@ -58,6 +58,17 @@ class ComplianceAgent(BaseAgent):
         
         logger.info("✅ Compliance Agent initialized")
     
+    def filter_context(self, full_context: Dict[str, Any]) -> Dict[str, Any]:
+        """Filter context to compliance-only data."""
+        return {
+            "cameras": full_context.get("cameras", {}),
+            "safety_violations": full_context.get("safety_violations", []),
+            "recent_incidents": full_context.get("recent_incidents", []),
+            "current_shift": full_context.get("current_shift"),
+            "temperature_readings": full_context.get("temperature_readings", {}),
+        }
+    
+    
     # ========== HYPOTHESIS GENERATION ==========
     
     async def generate_hypotheses(self, signal: Dict[str, Any]) -> List[Any]:

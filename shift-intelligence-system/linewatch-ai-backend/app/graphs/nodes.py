@@ -201,7 +201,18 @@ async def generate_hypotheses_node(state: HypothesisMarketState) -> Dict[str, An
     # 2. Solicit hypotheses from all agents in parallel
     import asyncio
     
-    tasks = [agent.generate_hypotheses(signal) for agent in agents]
+    tasks = []
+    for agent in agents:
+        # Optimization: Filter context to reduce token usage per agent
+        # We pass the full signal data to the filter
+        filtered_data = agent.filter_context(signal["data"])
+        
+        # Create agent-specific signal copy with filtered data
+        agent_signal = signal.copy()
+        agent_signal["data"] = filtered_data
+        
+        tasks.append(agent.generate_hypotheses(agent_signal))
+
     results = await asyncio.gather(*tasks, return_exceptions=True)
     
     for result in results:
@@ -257,8 +268,7 @@ async def gather_evidence_node(state: HypothesisMarketState) -> Dict[str, Any]:
     """
     Gather evidence for each hypothesis using dynamic agent tool proposals.
     
-    Instead of hardcoded checks, this asks the relevant agent: 
-    "How would you verify this?" and then simulates the tool execution.
+    Now parallelized for performance.
     """
     logger.info("🔍 Gathering evidence via dynamic agent tooling")
     
@@ -314,8 +324,8 @@ async def gather_evidence_node(state: HypothesisMarketState) -> Dict[str, Any]:
         return {"result": f"Simulated check for {tool_name}", "supports": is_supported}
 
     
-    # For each hypothesis, ask the proposing agent how to verify it
-    for hypothesis in hypotheses:
+    # Define async verification task
+    async def verify_hypothesis(hypothesis):
         # Determine responsible agent
         agent_name = hypothesis.proposed_by or "ProductionAgent"
         agent = agent_map.get(agent_name, agent_map["ProductionAgent"])
@@ -343,7 +353,6 @@ async def gather_evidence_node(state: HypothesisMarketState) -> Dict[str, Any]:
             strength=0.85 if sim_result["supports"] else 0.4,
             gathered_by=agent_name
         )
-        evidence_list.append(evidence)
         
         # Broadcast tool usage for frontend
         from app.services.websocket import manager
@@ -357,7 +366,21 @@ async def gather_evidence_node(state: HypothesisMarketState) -> Dict[str, Any]:
                 "timestamp": datetime.now().isoformat()
             }
         })
+        
+        return evidence
+
+    # Execute all verifications in parallel
+    import asyncio
+    verification_tasks = [verify_hypothesis(h) for h in hypotheses]
+    gathered_evidence = await asyncio.gather(*verification_tasks, return_exceptions=True)
     
+    # Process results
+    for res in gathered_evidence:
+        if isinstance(res, Evidence):
+            evidence_list.append(res)
+        elif isinstance(res, Exception):
+            logger.error(f"Evidence gathering failed: {res}")
+            
     logger.info(f"✅ Gathered {len(evidence_list)} pieces of dynamic evidence")
     
     return {"evidence": evidence_list}

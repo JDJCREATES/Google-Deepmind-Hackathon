@@ -125,11 +125,22 @@ class StaffingAgent(BaseAgent):
             thinking_level=2,  # Balanced for scheduling decisions
         )
         
+        
         logger.info(
             f"✅ Staffing Agent initialized with {len(tools)} tools "
             f"(Operators: {self.OPERATORS_PER_SHIFT}, Packagers: {self.PACKAGERS_PER_SHIFT})"
         )
 
+    def filter_context(self, full_context: Dict[str, Any]) -> Dict[str, Any]:
+        """Filter context to staffing-only data."""
+        return {
+            "operators": full_context.get("operators", {}),
+            "supervisor": full_context.get("supervisor", {}),
+            "current_shift": full_context.get("current_shift"),
+            "shift_elapsed_hours": full_context.get("shift_elapsed_hours"),
+            "fatigue_levels": full_context.get("fatigue_levels", {}),
+        }
+    
     # ========== HYPOTHESIS GENERATION ==========
     
     async def generate_hypotheses(self, signal: Dict[str, Any]) -> List[Any]:

@@ -190,14 +190,17 @@ def compile_hypothesis_market(
     graph = create_hypothesis_market_graph()
     
     if use_checkpointing:
-        # Use memory checkpointer for now
-        # Can swap to SqliteSaver for persistence
-        checkpointer = MemorySaver()
+        # Use SQLite persistent checkpointer
+        from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+        from app.config import settings
+        
+        checkpoint_path = settings.agent_checkpoint_db or "data/agent_checkpoints.db"
+        checkpointer = AsyncSqliteSaver.from_conn_string(checkpoint_path)
         compiled = graph.compile(checkpointer=checkpointer)
     else:
         compiled = graph.compile()
     
-    logger.info("✅ Hypothesis market graph compiled")
+    logger.info("✅ Hypothesis market graph compiled with SQLite persistence")
     
     return compiled
 
