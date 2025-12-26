@@ -23,6 +23,7 @@ interface CameraData {
     range?: number;      // e.g. 150px
     status?: string;     // 'active' | 'detecting' | 'idle'
     detection_count?: number;
+    color?: string;      // Dynamic color from backend
 }
 
 const CameraComp: React.FC<{ camera: CameraData }> = ({ camera }) => {
@@ -43,7 +44,7 @@ const CameraComp: React.FC<{ camera: CameraData }> = ({ camera }) => {
             }, wedgeRef.current.getLayer());
             
             anim.start();
-            return () => anim.stop();
+            return () => { anim.stop(); };
         } else if (wedgeRef.current) {
             wedgeRef.current.scale({ x: 1, y: 1 });
         }
@@ -58,7 +59,7 @@ const CameraComp: React.FC<{ camera: CameraData }> = ({ camera }) => {
                 angle={fov}
                 rotation={camera.rotation - fov / 2} // Center the FOV on the rotation angle
                 fill={isDetecting ? THEME.camera.fovDetected : THEME.camera.fov}
-                stroke={isDetecting ? THEME.camera.detecting : THEME.camera.active}
+                stroke={isDetecting ? (camera.color || THEME.camera.detecting) : THEME.camera.active}
                 strokeWidth={1}
                 opacity={0.5}
                 listening={false} // Don't block clicks
@@ -76,7 +77,7 @@ const CameraComp: React.FC<{ camera: CameraData }> = ({ camera }) => {
                 <Circle
                     x={3}
                     radius={3}
-                    fill={isDetecting ? THEME.camera.detecting : '#000'}
+                    fill={isDetecting ? (camera.color || THEME.camera.detecting) : '#000'}
                 />
             </Group>
         </Group>

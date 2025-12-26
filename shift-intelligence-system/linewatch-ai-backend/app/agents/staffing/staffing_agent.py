@@ -154,16 +154,18 @@ class StaffingAgent(BaseAgent):
         signal_desc = signal.get('description', '')
         
         # TOC: Labor shortage
-        if 'understaffed' in signal_desc.lower() or 'coverage' in signal_desc:
+        # TOC: Labor shortage & Staffing Issues
+        keywords = ['understaffed', 'coverage', 'fatigue', 'tired', 'break', 'staff', 'operator', 'absent', 'missing', 'empty', 'shift']
+        if any(k in signal_desc.lower() for k in keywords):
             hypotheses.append(create_hypothesis(
                 framework=HypothesisFramework.TOC,
                 hypothesis_id=f"H-STAFF-{uuid4().hex[:6]}",
-                description="Insufficient operators causing line stop",
-                initial_confidence=0.9,
+                description="Staffing/Labor optimization opportunity detected",
+                initial_confidence=0.85,
                 impact=8.0,
                 urgency=8.0,
                 proposed_by=self.agent_name,
-                recommended_action="Reassign floating packager",
+                recommended_action="Check fatigue and optimize roster",
                 target_agent="StaffingAgent"
             ))
             
