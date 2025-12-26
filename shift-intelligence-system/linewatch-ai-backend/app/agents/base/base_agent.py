@@ -125,9 +125,40 @@ class BaseAgent(ABC):
         try:
             from app.services.websocket import manager
             
-            # 1. Send Legacy/Activity Log Entry (ONLY if it's NOT just a thought)
+            # 1. Prepare Thought/Reasoning Event
+            should_broadcast_thought = (
+                message_type == "agent_thinking" or 
+                message_type == "agent_activity"
+            )
+            
+            thought_sent = False
+            if should_broadcast_thought:
+                noisy_patterns = [
+                    "Starting action phase",
+                    "Actions completed",
+                    "Verify",
+                ]
+                is_noisy = any(p in message for p in noisy_patterns)
+                
+                if not is_noisy:
+                    # Clean up the message for display if it's an internal log
+                    clean_msg = message
+                    if "Analyzing" in message and "context" in message:
+                        clean_msg = "Checking context..."
+                        
+                    await manager.broadcast({
+                        "type": "agent_thinking",
+                        "data": {
+                            "agent": self.agent_name.replace("Agent", "").lower(),
+                            "thought": clean_msg,
+                            "timestamp": datetime.now().isoformat()
+                        }
+                    })
+                    thought_sent = True
+
+            # 2. Send Legacy/Activity Log Entry (ONLY if we didn't send a thought)
             # This prevents duplicate logs where we see both "Thinking..." and "Thinking..."
-            if message_type != "agent_thinking":
+            if message_type != "agent_thinking" and not thought_sent:
                 await manager.broadcast({
                     "type": message_type,
                     "data": {
@@ -136,21 +167,6 @@ class BaseAgent(ABC):
                         "timestamp": datetime.now().isoformat()
                     }
                 })
-            
-            # 2. Send Thought Bubble / Reasoning Event
-            # This is displayed in the graph bubbles AND the activity log (as "Thinking")
-            should_broadcast_thought = (
-                message_type == "agent_thinking" or 
-                message_type == "agent_activity"
-            )
-            
-            if should_broadcast_thought:
-                noisy_patterns = [
-                    "Starting action phase",
-                    "Actions completed",
-                    "Verify",
-                ]
-                is_noisy = any(p in message for p in noisy_patterns)
                 
                 if not is_noisy:
                     # Clean up the message for display if it's an internal log

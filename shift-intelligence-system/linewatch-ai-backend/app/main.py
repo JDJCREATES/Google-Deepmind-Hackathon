@@ -51,9 +51,10 @@ app = FastAPI(
 )
 
 # Configure CORS
+# Configure CORS - RELAXED FOR DEVELOPMENT
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origins=["*"], # Allow all origins to fix 403 Forbidden in dev
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

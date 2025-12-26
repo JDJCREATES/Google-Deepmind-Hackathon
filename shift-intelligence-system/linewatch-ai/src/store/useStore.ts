@@ -1,26 +1,85 @@
 import { create } from 'zustand';
-import type { FloorLayout } from '../types';
-import { api, WS_URL } from '../services/api';
+import { api } from '../services/api';
 
 // =============================================================================
-// TYPE DEFINITIONS (EXPORTED for use in components)
+// TYPES
 // =============================================================================
 
-export interface LogEntry {
-    id: string;
-    timestamp: string;
-    type: string;
-    source?: string;
-    description?: string;
-    data?: any;
+export interface LayoutData {
+    dimensions: { width: number; height: number };
+    zones: ZoneData[];
+    lines: MachineData[];
+    cameras: CameraData[];
+    conveyors: ConveyorData[];
+    operators: OperatorData[];
 }
 
+export interface ZoneData {
+    id: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    label: string;
+    color: string;
+}
+
+export interface MachineData {
+    id: number;
+    label: string;
+    x: number;
+    y: number;
+    machine_w: number;
+    machine_h: number;
+    equip_w: number;
+    equip_h: number;
+    status: string;
+    health: number;
+    last_issue?: string;
+}
+
+export interface CameraData {
+    id: string;
+    line_id: number;
+    x: number;
+    y: number;
+    rotation: number;
+    fov: number;
+    range: number;
+    label: string;
+    status: string;
+}
+
+export interface OperatorData {
+    id: string;
+    name: string;
+    x: number;
+    y: number;
+    status: string;
+    assigned_lines: number[];
+}
+
+export interface ConveyorData {
+    id: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    direction: string;
+    status: string;
+}
+
+// NEW: Real-time production entities
 export interface ConveyorBox {
     id: string;
     x: number;
     y: number;
     color: string;
-    product_type: string;
+    type: string;
+}
+
+export interface WarehouseInventory {
+    [productType: string]: number;
 }
 
 export interface MachineProductionState {
@@ -31,57 +90,52 @@ export interface MachineProductionState {
     is_running: boolean;
 }
 
-export interface WarehouseInventory {
-    [productType: string]: number;
-}
-
+// Supervisor Entity (NEW)
 export interface Supervisor {
     id: string;
     name: string;
     x: number;
     y: number;
-    status: string;
+    status: string; // 'idle', 'moving_to_operator', 'relieving', 'returning'
     current_action: string;
-    assigned_operator_id: string | null;
 }
 
-export interface Operator {
+export interface LogEntry {
     id: string;
-    name: string;
-    x: number;
-    y: number;
-    status: string;
-    current_action: string;
-    fatigue: number;  // 0-100
-    on_break: boolean;
-    break_requested: boolean;
+    type: string;
+    source: string;
+    description: string;
+    timestamp: string;
+    data?: any;
 }
 
 interface State {
-    // Static Data
-    layout: FloorLayout | null;
+    layout: LayoutData | null;
     isLoading: boolean;
     error: string | null;
-
-    // Live Data - Connection
     socket: WebSocket | null;
     isConnected: boolean;
     logs: LogEntry[];
-    thoughtSignatures: Record<string, number>;
     
-    // Live Data - Map Entities
-    activeOperators: Record<string, any>;
-    machineStates: Record<number, any>;
-    cameraStates: Record<string, any>;
+    // Thought tracking (deduplication)
+    thoughtSignatures: Record<string, number>; // hash -> timestamp
+
+    // Real-time State
+    activeOperators: Record<string, OperatorData>;
+    machineStates: Record<number, MachineData>;
+    cameraStates: Record<string, CameraData>;
     
-    // Live Data - Production System (NEW)
+    // NEW: Production System State
     conveyorBoxes: Record<string, ConveyorBox>;
     warehouseInventory: WarehouseInventory;
     machineProductionState: Record<number, MachineProductionState>;
     
-    // Live Data - Supervisor & Fatigue (NEW)
+    // NEW: Supervisor & Fatigue
     supervisor: Supervisor | null;
-    operators: Record<string, Operator>;
+    operators: Record<string, OperatorData>; // Centralized operators state (with fatigue)
+    
+    // NEW: Maintenance Crew
+    maintenanceCrew: Supervisor | null; // Re-use Supervisor type for now as structure is similar
 
     // Actions
     fetchLayout: () => Promise<void>;
@@ -89,12 +143,7 @@ interface State {
     toggleSimulation: () => Promise<void>;
 }
 
-// =============================================================================
-// STORE IMPLEMENTATION
-// =============================================================================
-
 export const useStore = create<State>((set, get) => ({
-    // Initial State
     layout: null,
     isLoading: false,
     error: null,
@@ -102,92 +151,97 @@ export const useStore = create<State>((set, get) => ({
     isConnected: false,
     logs: [],
     thoughtSignatures: {},
+
     activeOperators: {},
     machineStates: {},
     cameraStates: {},
     
-    // Production System State (NEW)
     conveyorBoxes: {},
     warehouseInventory: {},
     machineProductionState: {},
     
-    // Supervisor & Fatigue State (NEW)
     supervisor: null,
     operators: {},
-
-    // =========================================================================
-    // ACTIONS
-    // =========================================================================
+    maintenanceCrew: null,
 
     fetchLayout: async () => {
         set({ isLoading: true });
         try {
-            const layout = await api.layout.get();
-            set({ layout, isLoading: false });
+            const data = await api.layout.get();
+            set({ layout: data, isLoading: false });
         } catch (err) {
-            set({ error: 'Failed to load floor layout', isLoading: false });
+            set({ error: 'Failed to fetch layout', isLoading: false });
         }
     },
 
     connectWebSocket: () => {
-        if (get().socket) return;
+        if (get().socket?.readyState === WebSocket.OPEN) return;
 
-        const socket = new WebSocket(WS_URL);
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        // FIXED: Endpoint must match backend definition @app.websocket("/ws/stream")
+        const wsUrl = `${protocol}//${window.location.hostname}:8000/ws/stream`;
+        
+        console.log('Connecting to WebSocket:', wsUrl);
+        const socket = new WebSocket(wsUrl);
 
         socket.onopen = () => {
-            set({ isConnected: true });
-            const initEntry: LogEntry = {
-                id: 'sys-init',
-                type: 'system',
-                source: 'WebSocket',
-                description: 'Connected to Agent system',
-                timestamp: new Date().toISOString(),
-            };
-            set((state) => ({ logs: [initEntry, ...state.logs] }));
+            console.log('WebSocket Connected');
+            set({ isConnected: true, error: null });
         };
 
         socket.onmessage = (event) => {
             try {
                 const message = JSON.parse(event.data);
                 
-                // =============================================================
-                // HIGH-FREQUENCY UPDATES (Don't log to activity feed)
-                // =============================================================
-                
-                // Operator position updates (individual, for backwards compat)
+                // Active Operators (Movement)
                 if (message.type === 'operator_update') {
+                    // Update the centralized operators state
+                    // This handles creating new operators if they don't exist
                     set(state => ({
-                        activeOperators: {
-                            ...state.activeOperators,
-                            [message.data.id]: message.data
-                        },
-                        // Also store in new operators state with fatigue data
                         operators: {
                             ...state.operators,
                             [message.data.id]: message.data
+                        },
+                        // Keep legacy activeOperators for backward compatibility if needed
+                         activeOperators: {
+                            ...state.activeOperators,
+                            [message.data.id]: message.data,
                         }
                     }));
-                    return;
-                }
-                
-                // FOG OF WAR: Visibility sync - REPLACES operators state
-                // Only operators visible to cameras will appear
-                if (message.type === 'visibility_sync') {
-                    set({
-                        operators: message.data.operators || {}
-                    });
                     return;
                 }
 
-                // Camera detection updates
-                if (message.type === 'camera_detection') {
-                    set(state => ({
-                        cameraStates: {
-                            ...state.cameraStates,
-                            [message.data.camera_id]: message.data
+                // Operator Fatigue / Status Updates
+                if (message.type === 'operator_fatigue_update') {
+                     set(state => ({
+                        operators: {
+                            ...state.operators,
+                            [message.data.id]: {
+                                ...(state.operators[message.data.id] || {}), // Merge with existing
+                                ...message.data // Apply updates (fatigue, status, on_break)
+                            }
                         }
                     }));
                     return;
+                }
+
+                // Supervisor updates
+                if (message.type === 'supervisor_update') {
+                    set({ supervisor: message.data });
+                    return;
+                }
+                
+                // Maintenance Crew updates
+                if (message.type === 'maintenance_crew_update') {
+                    set({ maintenanceCrew: message.data });
+                    return;
+                }
+
+                // Shift status updates
+                if (message.type === 'shift_status') {
+                     // Log shift status changes
+                     // We could store this in state if needed
+                     return;
                 }
 
                 // Line status updates (health)
@@ -210,142 +264,64 @@ export const useStore = create<State>((set, get) => ({
                     set(state => ({
                         machineProductionState: {
                             ...state.machineProductionState,
-                            [message.data.line_id]: message.data
+                            [message.data.machine_id]: message.data
                         }
                     }));
                     return;
                 }
-                
-                // Large box dropped onto conveyor
-                if (message.type === 'large_box_dropped') {
-                    set(state => ({
-                        conveyorBoxes: {
-                            ...state.conveyorBoxes,
-                            [message.data.id]: message.data
-                        }
-                    }));
-                    return;
+
+                // Global inventory update
+                if (message.type === 'inventory_update') {
+                     set({ warehouseInventory: message.data });
+                     return;
                 }
                 
-                // Conveyor box position update
-                if (message.type === 'conveyor_box_update') {
-                    set(state => ({
-                        conveyorBoxes: {
-                            ...state.conveyorBoxes,
-                            [message.data.id]: message.data
-                        }
-                    }));
+                // Conveyor box movement (high frequency)
+                if (message.type === 'conveyor_update') {
+                    // message.data is the Full boxes dict {box_id: Box}
+                    set({ conveyorBoxes: message.data });
                     return;
                 }
-                
-                // Box arrived at warehouse
-                if (message.type === 'box_arrived_warehouse') {
-                    set(state => {
-                        // Remove box from conveyor
-                        const newConveyorBoxes = { ...state.conveyorBoxes };
-                        delete newConveyorBoxes[message.data.id];
-                        
-                        // Update warehouse inventory
-                        return {
-                            conveyorBoxes: newConveyorBoxes,
-                            warehouseInventory: {
-                                ...state.warehouseInventory,
-                                [message.data.product_type]: message.data.total
-                            }
-                        };
-                    });
-                    return;
-                }
-                
-                // Full warehouse inventory update
-                if (message.type === 'warehouse_inventory') {
-                    set({ warehouseInventory: message.data });
-                    return;
-                }
-                
+
                 // =============================================================
-                // SUPERVISOR & FATIGUE UPDATES (NEW)
-                // =============================================================
-                
-                // Supervisor position and status update
-                if (message.type === 'supervisor_update') {
-                    set({ supervisor: message.data });
-                    return;
-                }
-                
-                // Camera status update (color-coded visibility)
-                if (message.type === 'camera_status') {
-                    set(state => ({
+
+                if (message.type === 'camera_update') {
+                    set((state) => ({
                         cameraStates: {
                             ...state.cameraStates,
-                            [message.data.camera_id]: message.data
+                            [message.data.id]: message.data
                         }
                     }));
                     return;
                 }
-                
-                // Shift status update
-                if (message.type === 'shift_status') {
-                    // Could add shift tracking state here if needed
+
+                // LOGGING (Filtered)
+                // Avoid logging high-frequency updates
+                if (['operator_update', 'conveyor_update', 'machine_production_state', 'camera_update', 'supervisor_update', 'operator_fatigue_update', 'shift_status', 'inventory_update', 'line_status', 'maintenance_crew_update'].includes(message.type)) {
                     return;
                 }
                 
-                // Shift change event
-                if (message.type === 'shift_change') {
-                    // Clear operators on shift change, new ones will come via operator_update
-                    set({ operators: {} });
-                    return;
-                }
+                // Deduplicate Agent Thoughts
+                let description = message.data?.thought || JSON.stringify(message.data);
                 
-                // Small box created (optional - for detailed tracking)
-                if (message.type === 'small_box_created') {
-                    // Currently not rendered, but could be used for animations
-                    return;
-                }
-                
-                // =============================================================
-                // THOUGHT SIGNATURES
-                // =============================================================
-                
-                if (message.type === 'thought_signature') {
-                    const agent = message.data?.agent;
-                    const count = message.data?.total_signatures || 0;
-                    if (agent) {
-                        set((state) => ({
-                            thoughtSignatures: {
-                                ...state.thoughtSignatures,
-                                [agent]: count
-                            }
-                        }));
+                if (message.type === 'agent_thought') {
+                    const now = Date.now();
+                    // Create a simple hash of the thought content
+                    const thoughtHash = description.split('').reduce((a: number, b: string) => { a = ((a << 5) - a) + b.charCodeAt(0); return a & a }, 0);
+                    const lastSeen = get().thoughtSignatures[thoughtHash];
+                    
+                    // If we saw this exact thought in the last 2 seconds, skip it
+                    if (lastSeen && (now - lastSeen < 2000)) {
+                        return;
                     }
-                    return;
-                }
-                
-                // =============================================================
-                // SYSTEM STATUS (Don't clutter activity log)
-                // =============================================================
-                
-                if (message.type === 'system_status') {
-                    return;
-                }
-                
-                // =============================================================
-                // LOGGABLE EVENTS (Show in Activity Log)
-                // =============================================================
-                
-                // Helper to format actions or thoughts
-                let description = message.data?.description;
-                
-                if (!description) {
-                    if (message.data?.thought) {
-                        description = `💭 ${message.data.thought}`;
-                    } else if (message.data?.actions && Array.isArray(message.data.actions)) {
-                        description = `Exec: ${message.data.actions.join(', ')}`;
-                    } else if (message.data?.reasoning) {
-                         description = message.data.reasoning;
-                    } else {
-                        description = JSON.stringify(message.data);
-                    }
+                    
+                    // Update signature cache
+                    set(state => ({
+                        thoughtSignatures: {
+                            ...state.thoughtSignatures,
+                            [thoughtHash]: now
+                        }
+                    }));
                 }
 
                 const logEntry: LogEntry = {
@@ -369,9 +345,10 @@ export const useStore = create<State>((set, get) => ({
             console.error('WebSocket error:', error);
             set({ isConnected: false });
         };
-
+        
         socket.onclose = () => {
             set({ isConnected: false, socket: null });
+            setTimeout(() => get().connectWebSocket(), 3000);
         };
 
         set({ socket });
@@ -379,21 +356,19 @@ export const useStore = create<State>((set, get) => ({
         // Expose WebSocket globally for ThoughtBubble component
         (window as any).__agentWebSocket = socket;
     },
-    
+
     toggleSimulation: async () => {
         try {
             const status = await api.simulation.getStatus();
             
             if (status.running) {
                 await api.simulation.stop();
-                // Clear production state on stop
                 set({
                     conveyorBoxes: {},
                     machineProductionState: {},
                 });
             } else {
                 await api.simulation.start();
-                // Clear state on start (fresh simulation)
                 set({
                     conveyorBoxes: {},
                     warehouseInventory: {},

@@ -293,8 +293,31 @@ class SimulationService:
             "office_y": office_y
         }
         
+        
         # Cameras for detection logic
         self.cameras = self.layout.get("cameras", [])
+
+        # =================================================================
+        # MAINTENANCE CREW (NEW)
+        # =================================================================
+        # Start in maintenance zone (top-left)
+        maint_x = 50
+        maint_y = 30
+        self.maintenance_crew = {
+            "id": "MAINT-01",
+            "name": "Maintenance Crew",
+            "x": maint_x,
+            "y": maint_y,
+            "status": "idle", # idle, moving, repairing, returning
+            "target_machine_id": None,
+            "target_x": maint_x,
+            "target_y": maint_y,
+            "path": [],
+            "path_index": 0,
+            "base_x": maint_x,
+            "base_y": maint_y,
+            "repair_timer": 0.0
+        }
         
         logger.info(f"🏭 SimulationService initialized with {len(self.machine_production)} production lines")
         logger.info(f"👥 3-shift system: {len(self.all_operators)} total operators (5 per shift)")
@@ -564,6 +587,9 @@ class SimulationService:
         
         # 10. BROADCAST SUPERVISOR UPDATE
         events.append({"type": "supervisor_update", "data": self.supervisor})
+        
+        # 11. BROADCAST MAINTENANCE CREW UPDATE
+        events.append({"type": "maintenance_crew_update", "data": self.maintenance_crew})
         
         # 11. BROADCAST SHIFT INFO
         events.append({
@@ -1068,6 +1094,62 @@ class SimulationService:
                     self.supervisor["x"] += (dx / dist) * speed * self.tick_rate
                     self.supervisor["y"] += (dy / dist) * speed * self.tick_rate
 
+        # =====================================================================
+        # UPDATE MAINTENANCE CREW
+        # =====================================================================
+        if self.maintenance_crew["status"] == "moving_to_machine" and self.maintenance_crew["path"]:
+            path = self.maintenance_crew["path"]
+            idx = self.maintenance_crew["path_index"]
+            
+            if idx < len(path):
+                target_x, target_y = path[idx]
+                dx = target_x - self.maintenance_crew["x"]
+                dy = target_y - self.maintenance_crew["y"]
+                dist = math.sqrt(dx * dx + dy * dy)
+                
+                if dist < speed * self.tick_rate:
+                    # Reached waypoint
+                    self.maintenance_crew["x"] = target_x
+                    self.maintenance_crew["y"] = target_y
+                    self.maintenance_crew["path_index"] += 1
+                    
+                    if self.maintenance_crew["path_index"] >= len(path):
+                        # Arrived at machine
+                        self.maintenance_crew["status"] = "working"
+                        self.maintenance_crew["current_action"] = "repairing"
+                        logger.info("🛠️ Maintenance Crew arrived at machine - starting repair")
+                        
+                        # Simulate repair time then return (or triggered by agent?)
+                        # For now, let's fix it after 5 seconds
+                        asyncio.create_task(self._finish_repair(self.maintenance_crew["assigned_machine_id"]))
+                else:
+                    self.maintenance_crew["x"] += (dx / dist) * speed * self.tick_rate
+                    self.maintenance_crew["y"] += (dy / dist) * speed * self.tick_rate
+                    
+        elif self.maintenance_crew["status"] == "returning" and self.maintenance_crew["path"]:
+             path = self.maintenance_crew["path"]
+             idx = self.maintenance_crew["path_index"]
+            
+             if idx < len(path):
+                target_x, target_y = path[idx]
+                dx = target_x - self.maintenance_crew["x"]
+                dy = target_y - self.maintenance_crew["y"]
+                dist = math.sqrt(dx * dx + dy * dy)
+                
+                if dist < speed * self.tick_rate:
+                     self.maintenance_crew["x"] = target_x
+                     self.maintenance_crew["y"] = target_y
+                     self.maintenance_crew["path_index"] += 1
+                     
+                     if self.maintenance_crew["path_index"] >= len(path):
+                         self.maintenance_crew["status"] = "idle"
+                         self.maintenance_crew["current_action"] = "standby"
+                         self.maintenance_crew["assigned_machine_id"] = None
+                         self.maintenance_crew["path"] = []
+                else:
+                    self.maintenance_crew["x"] += (dx / dist) * speed * self.tick_rate
+                    self.maintenance_crew["y"] += (dy / dist) * speed * self.tick_rate
+
     def dispatch_supervisor_to_location(self, target_x: int, target_y: int, reason: str) -> bool:
         """
         External command to dispatch supervisor to a specific location.
@@ -1088,6 +1170,36 @@ class SimulationService:
             self.supervisor["current_action"] = f"checking_{reason}"
             logger.info(f"👔 Supervisor dispatched to ({target_x}, {target_y}) for: {reason}")
             return True
+        return False
+
+    def dispatch_maintenance_crew(self, machine_id: int) -> bool:
+        """
+        External command to dispatch maintenance crew to a broken machine.
+        Used by Maintenance Agent.
+        """
+        if self.maintenance_crew["status"] != "idle":
+            return False
+            
+        # Find machine coords
+        target_machine = next((l for l in self.layout["lines"] if l["id"] == machine_id), None)
+        if not target_machine:
+            return False
+            
+        path = self.pathfinding.find_path(
+            self.maintenance_crew["x"], self.maintenance_crew["y"],
+            target_machine["x"], target_machine["y"]
+        )
+        
+        if path:
+            self.maintenance_crew["path"] = path
+            self.maintenance_crew["path_index"] = 0
+            self.maintenance_crew["status"] = "moving_to_machine"
+            self.maintenance_crew["assigned_machine_id"] = machine_id
+            self.maintenance_crew["current_action"] = f"responding_to_line_{machine_id}"
+            logger.info(f"🛠️ Maintenance Crew dispatched to Line {machine_id}")
+            return True
+            
+        logger.warning(f"⚠️ No path found for maintenance crew to Line {machine_id}")
         return False
 
     def trigger_operator_break(self, operator_id: str) -> bool:
@@ -1288,24 +1400,13 @@ class SimulationService:
             self.machine_production[line_id]["is_running"] = False
         
         # Dispatch nearest operator using pathfinding
-        target_line = next((l for l in self.layout["lines"] if l["id"] == line_id), None)
-        if target_line and self.operators:
-            best_op = min(self.operators, 
-                         key=lambda o: math.hypot(o["x"] - target_line["x"], o["y"] - target_line["y"]))
+        # REMOVED: Auto-dispatch logic. Operators should NOT automatically fix lines.
+        # This forces the Maintenance Agent to detect and dispatch the crew.
+        
+        # Only log the breakdown
+        logger.warning(f"🚨 Breakdown generated on Line {line_id} (Health: 40%) - Waiting for Maintenance Agent")
             
-            # Use pathfinding to navigate to the machine
-            path = self.pathfinding.find_path(
-                best_op["x"], best_op["y"],
-                target_line["x"], target_line["y"]
-            )
-            
-            if path:
-                best_op["path"] = path
-                best_op["path_index"] = 0
-                best_op["target_x"] = target_line["x"]
-                best_op["target_y"] = target_line["y"]
-                best_op["status"] = "moving"
-                best_op["current_action"] = f"Fixing Line {line_id}"
+
         
         failure_modes = [
             "Motor Overheat (Temp > 85°C)",
@@ -1394,6 +1495,33 @@ class SimulationService:
             if self.is_running:
                 logger.error(f"Failed to trigger investigation: {e}")
     
+    async def _finish_repair(self, machine_id: int):
+        """Helper to simulate repair duration and return trip."""
+        await asyncio.sleep(5) # Repair takes 5 seconds
+        
+        # Fix machine
+        self.line_health[machine_id] = 100.0
+        if machine_id in self.machine_production:
+             self.machine_production[machine_id]["is_running"] = True
+        
+        logger.info(f"✅ Line {machine_id} repaired by Maintenance Crew")
+        
+        # Return to base
+        self.maintenance_crew["status"] = "returning"
+        self.maintenance_crew["current_action"] = "returning_to_base"
+        
+        # Maintenance Bay is at (canvas_width - 60, 40)
+        target_x = self.canvas_width - 60
+        target_y = 40
+        
+        path = self.pathfinding.find_path(
+            self.maintenance_crew["x"], self.maintenance_crew["y"],
+            target_x, target_y
+        )
+        if path:
+            self.maintenance_crew["path"] = path
+            self.maintenance_crew["path_index"] = 0
+            
     async def _perform_shift_change(self, events: List[Dict[str, Any]]):
         """Perform shift change: deactivate current shift, activate next shift."""
         # Determine next shift
