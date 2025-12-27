@@ -128,28 +128,26 @@ class BaseAgent(ABC):
     async def _ensure_agent_initialized(self):
         """
         Lazily initialize the SQLite checkpointer and compiled agent.
-        This is called before any async agent operation to ensure the
-        aiosqlite connection is properly established.
+        This is called before any async agent operation.
+        Uses synchronous SqliteSaver for reliability.
         """
         if self._agent is not None:
             return  # Already initialized
         
-        import aiosqlite
+        import sqlite3
         import os
+        from langgraph.checkpoint.sqlite import SqliteSaver
         
         # Ensure directory exists
         os.makedirs(os.path.dirname(self._checkpoint_path) or ".", exist_ok=True)
         
-        # Create persistent aiosqlite connection
-        self._db_conn = await aiosqlite.connect(self._checkpoint_path)
+        # Create persistent sqlite3 connection (check_same_thread=False for async context)
+        self._db_conn = sqlite3.connect(self._checkpoint_path, check_same_thread=False)
         
-        # Create AsyncSqliteSaver with the live connection
-        self._checkpointer = AsyncSqliteSaver(self._db_conn)
+        # Create SqliteSaver with the connection
+        self._checkpointer = SqliteSaver(self._db_conn)
         
-        # Initialize the checkpointer's tables
-        await self._checkpointer.setup()
-        
-        # Compile the agent with the live checkpointer
+        # Compile the agent with the checkpointer
         self._agent = create_react_agent(
             self._llm,
             tools=self._tools,

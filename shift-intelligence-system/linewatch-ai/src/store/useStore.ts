@@ -392,9 +392,32 @@ export const useStore = create<State>()(
                 }
                 
                 // Conveyor box movement (high frequency)
-                if (message.type === 'conveyor_update') {
-                    // message.data is the Full boxes dict {box_id: Box}
-                    set({ conveyorBoxes: message.data });
+                if (message.type === 'conveyor_box_update') {
+                    // message.data is a single box update, merge into state
+                    const box = message.data;
+                    set((state) => ({
+                        conveyorBoxes: {
+                            ...state.conveyorBoxes,
+                            [box.id]: box
+                        }
+                    }));
+                    return;
+                }
+                
+                // Box arrived at warehouse - remove from conveyor and update inventory
+                if (message.type === 'box_arrived_warehouse') {
+                    const { id, product_type, total } = message.data;
+                    set((state) => {
+                        const newBoxes = { ...state.conveyorBoxes };
+                        delete newBoxes[id];
+                        return {
+                            conveyorBoxes: newBoxes,
+                            warehouseInventory: {
+                                ...state.warehouseInventory,
+                                [product_type]: total
+                            }
+                        };
+                    });
                     return;
                 }
 
@@ -499,6 +522,11 @@ export const useStore = create<State>()(
             name: 'linewatch-logs',
             storage: createJSONStorage(() => localStorage),
             partialize: (state) => ({ logs: state.logs }),
+            // Merge persisted logs with initial state, keeping persisted logs
+            merge: (persistedState, currentState) => ({
+                ...currentState,
+                logs: (persistedState as any)?.logs || currentState.logs,
+            }),
         }
     )
 );

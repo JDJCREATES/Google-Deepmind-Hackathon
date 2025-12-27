@@ -227,32 +227,33 @@ async def run_hypothesis_market(
     )
     
     # Use SQLite persistence correctly with async context manager
-    from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+    from langgraph.checkpoint.sqlite import SqliteSaver
     from app.config import settings
+    import sqlite3
     
     checkpoint_path = settings.agent_checkpoint_db or "data/agent_checkpoints.db"
     
     # Ensure directory exists
     import os
-    os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
+    os.makedirs(os.path.dirname(checkpoint_path) or ".", exist_ok=True)
     
     try:
-        async with AsyncSqliteSaver.from_conn_string(checkpoint_path) as checkpointer:
-            # Compile graph using the active checkpointer connection
-            graph = compile_hypothesis_market(use_checkpointing=True, checkpointer=checkpointer)
-            
-            config = {"configurable": {"thread_id": thread_id}}
-            
-            # Run graph
-            final_state = await graph.ainvoke(initial_state, config)
-            
+        # Use synchronous SqliteSaver - simpler and more reliable
+        conn = sqlite3.connect(checkpoint_path, check_same_thread=False)
+        checkpointer = SqliteSaver(conn)
+        
+        # Compile graph using the checkpointer
+        graph = compile_hypothesis_market(use_checkpointing=True, checkpointer=checkpointer)
+        
+        config = {"configurable": {"thread_id": thread_id}}
+        
+        # Run graph
+        final_state = await graph.ainvoke(initial_state, config)
+        
         logger.info("✅ Hypothesis market cycle complete")
         return final_state
         
     except Exception as e:
         logger.error(f"❌ Hypothesis market execution failed: {e}")
-        # Fallback to memory-only execution if DB fails
-        logger.warning("⚠️ Falling back to in-memory execution")
-        graph = compile_hypothesis_market(use_checkpointing=True) # Defaults to MemorySaver
-        config = {"configurable": {"thread_id": thread_id}}
-        return await graph.ainvoke(initial_state, config)
+        raise  # Don't fallback - fail loudly so we fix the issue
+
