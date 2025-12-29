@@ -88,7 +88,7 @@ class BaseAgent(ABC):
         self.logger = get_agent_logger(agent_name)
         
         # Gemini 3 LLM with thinking configuration
-        model_name = "gemini-3-flash-preview" if use_flash_model else "gemini-3-pro-preview"
+        model_name = "gemini-3-flash-preview"  # Downgrading everything to Flash as requested
         self.llm = ChatGoogleGenerativeAI(
             model=model_name,
             google_api_key=settings.google_api_key,
