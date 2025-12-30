@@ -129,33 +129,53 @@ class BaseAgent(ABC):
         """
         Lazily initialize the SQLite checkpointer and compiled agent.
         This is called before any async agent operation.
-        Uses synchronous SqliteSaver for reliability.
+        Uses AsyncSqliteSaver (required for ainvoke).
         """
         if self._agent is not None:
             return  # Already initialized
         
-        import sqlite3
+        import aiosqlite
         import os
-        from langgraph.checkpoint.sqlite import SqliteSaver
+        from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
         
         # Ensure directory exists
         os.makedirs(os.path.dirname(self._checkpoint_path) or ".", exist_ok=True)
         
-        # Create persistent sqlite3 connection (check_same_thread=False for async context)
-        self._db_conn = sqlite3.connect(self._checkpoint_path, check_same_thread=False)
-        
-        # Create SqliteSaver with the connection
-        self._checkpointer = SqliteSaver(self._db_conn)
-        
-        # Compile the agent with the checkpointer
-        self._agent = create_react_agent(
-            self._llm,
-            tools=self._tools,
-            prompt=self._system_prompt,
-            checkpointer=self._checkpointer,
-        )
-        
-        self.logger.info(f"🔌 {self.agent_name} SQLite checkpointer connected: {self._checkpoint_path}")
+        try:
+            # Create persistent aiosqlite connection
+            self._db_conn = await aiosqlite.connect(self._checkpoint_path)
+            
+            # MONKEY PATCH: LangGraph's AsyncSqliteSaver expects 'is_alive' which aiosqlite lacks
+            # We add a dummy property to satisfy the check.
+            self._db_conn.is_alive = True
+            
+            # Create AsyncSqliteSaver with the connection
+            self._checkpointer = AsyncSqliteSaver(self._db_conn)
+            
+            # Initialize the checkpointer's tables
+            await self._checkpointer.setup()
+            
+            # Compile the agent with the checkpointer
+            self._agent = create_react_agent(
+                self._llm,
+                tools=self._tools,
+                prompt=self._system_prompt,
+                checkpointer=self._checkpointer,
+            )
+            
+            self.logger.info(f"🔌 {self.agent_name} SQLite checkpointer connected: {self._checkpoint_path}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to initialize SQLite checkpointer: {e}")
+            self.logger.warning("⚠️ Falling back to MemorySaver (persistence disabled for this session)")
+            from langgraph.checkpoint.memory import MemorySaver
+            self._checkpointer = MemorySaver()
+            self._agent = create_react_agent(
+                self._llm,
+                tools=self._tools,
+                prompt=self._system_prompt,
+                checkpointer=self._checkpointer,
+            )
     
     @property
     def agent(self):

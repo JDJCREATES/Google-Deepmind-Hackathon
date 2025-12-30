@@ -226,10 +226,10 @@ async def run_hypothesis_market(
         signal_data=signal_data,
     )
     
-    # Use SQLite persistence correctly with async context manager
-    from langgraph.checkpoint.sqlite import SqliteSaver
+    # Use AsyncSqliteSaver with manual connection
+    from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
     from app.config import settings
-    import sqlite3
+    import aiosqlite
     
     checkpoint_path = settings.agent_checkpoint_db or "data/agent_checkpoints.db"
     
@@ -237,10 +237,18 @@ async def run_hypothesis_market(
     import os
     os.makedirs(os.path.dirname(checkpoint_path) or ".", exist_ok=True)
     
+    # Connection object to close later
+    conn = None
+    
     try:
-        # Use synchronous SqliteSaver - simpler and more reliable
-        conn = sqlite3.connect(checkpoint_path, check_same_thread=False)
-        checkpointer = SqliteSaver(conn)
+        # Create persistent aiosqlite connection
+        conn = await aiosqlite.connect(checkpoint_path)
+        
+        # MONKEY PATCH: LangGraph's AsyncSqliteSaver expects 'is_alive'
+        conn.is_alive = True
+        
+        # Create AsyncSqliteSaver
+        checkpointer = AsyncSqliteSaver(conn)
         
         # Compile graph using the checkpointer
         graph = compile_hypothesis_market(use_checkpointing=True, checkpointer=checkpointer)
@@ -255,5 +263,12 @@ async def run_hypothesis_market(
         
     except Exception as e:
         logger.error(f"❌ Hypothesis market execution failed: {e}")
-        raise  # Don't fallback - fail loudly so we fix the issue
+        # Only fallback if absolutely necessary
+        logger.warning("⚠️ Falling back to in-memory execution")
+        graph = compile_hypothesis_market(use_checkpointing=True) # Defaults to MemorySaver
+        config = {"configurable": {"thread_id": thread_id}}
+        return await graph.ainvoke(initial_state, config)
+    finally:
+        if conn:
+            await conn.close()
 

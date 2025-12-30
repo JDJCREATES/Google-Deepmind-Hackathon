@@ -23,13 +23,13 @@ function App() {
   useEffect(() => {
     connectWebSocket();
     
-    // Poll simulation status every 2 seconds
+    // Poll simulation status every 30 seconds
     const interval = setInterval(async () => {
         try {
             const status = await api.simulation.getStatus();
             setSimStatus({running: status.running, uptime: status.uptime_minutes});
         } catch(e) {/* ignore */}
-    }, 2000);
+    }, 30000);
     
     return () => clearInterval(interval);
   }, []);
