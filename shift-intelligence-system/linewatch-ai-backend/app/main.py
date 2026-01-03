@@ -115,4 +115,6 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=settings.api_port,
         reload=True,
+        log_level="warning",  # Suppress INFO level logs (including access logs)
+        access_log=False,     # Disable access logging entirely
     )

@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { persist, createJSONStorage } from 'zustand/middleware';
 import { api } from '../services/api';
 
 // =============================================================================
@@ -244,8 +243,7 @@ interface State {
 }
 
 export const useStore = create<State>()(
-    persist(
-        (set, get) => ({
+    (set, get) => ({
     layout: null,
     isLoading: false,
     error: null,
@@ -352,7 +350,9 @@ export const useStore = create<State>()(
                                 current.status !== data.status ||
                                 current.on_break !== data.on_break ||
                                 current.break_requested !== data.break_requested ||
-                                current.current_action !== data.current_action) {
+                                current.current_action !== data.current_action ||
+                                current.x !== data.x ||
+                                current.y !== data.y) {
                                 
                                 newOperators[id] = {
                                     ...(newOperators[id] || {}), // Keep existing X/Y
@@ -640,15 +640,4 @@ export const useStore = create<State>()(
         }
     }
         }),
-        {
-            name: 'linewatch-logs',
-            storage: createJSONStorage(() => localStorage),
-            partialize: (state) => ({ logs: state.logs }),
-            // Merge persisted logs with initial state, keeping persisted logs
-            merge: (persistedState, currentState) => ({
-                ...currentState,
-                logs: (persistedState as any)?.logs || currentState.logs,
-            }),
-        }
-    )
 );

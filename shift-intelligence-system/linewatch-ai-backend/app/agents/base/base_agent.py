@@ -123,7 +123,7 @@ class BaseAgent(ABC):
         self.thought_signatures: list = []  # Store all thought signatures over time
         self.latest_thought_signature: str | None = None  # Most recent signature to pass back
         
-        self.logger.info(f"✅ {agent_name} initialized with Gemini 3 ({model_name}) - SQLite lazy init")
+        self.logger.debug(f"✅ {agent_name} initialized with Gemini 3 ({model_name}) - SQLite lazy init")
     
     async def _ensure_agent_initialized(self):
         """
@@ -147,7 +147,7 @@ class BaseAgent(ABC):
             
             # MONKEY PATCH: LangGraph's AsyncSqliteSaver expects 'is_alive' which aiosqlite lacks
             # We add a dummy property to satisfy the check.
-            self._db_conn.is_alive = True
+            self._db_conn.is_alive = lambda: True
             
             # Create AsyncSqliteSaver with the connection
             self._checkpointer = AsyncSqliteSaver(self._db_conn)
@@ -163,7 +163,7 @@ class BaseAgent(ABC):
                 checkpointer=self._checkpointer,
             )
             
-            self.logger.info(f"🔌 {self.agent_name} SQLite checkpointer connected: {self._checkpoint_path}")
+            self.logger.debug(f"🔌 {self.agent_name} SQLite checkpointer connected: {self._checkpoint_path}")
             
         except Exception as e:
             self.logger.error(f"Failed to initialize SQLite checkpointer: {e}")

@@ -273,15 +273,7 @@ class SimulationService:
         self.operators: List[Dict[str, Any]] = []  # Currently active shift
         self._initialize_all_operators()
         
-        # =================================================================
-        # SUPERVISOR
-        # =================================================================
-        # Find the production zone for pathfinding bounds
-        self.production_zone = next(
-            (z for z in self.layout["zones"] if z["id"] == "production_floor"), 
-            {"x": 0, "y": 0, "width": self.canvas_width, "height": self.canvas_height} # Fallback
-        )
-        
+
         # =====================================================================
         # STATE & PERSISTENCE
         # =====================================================================
@@ -304,17 +296,11 @@ class SimulationService:
         # Initialize Warehouse Inventory
         self.warehouse_inventory = {k: 0 for k in PRODUCT_CATALOG.keys()}
         
-        # Machine State
-        self.line_health = {i: 100.0 for i in range(1, settings.num_production_lines + 1)}
-        self.machines = {} # Detailed machine objects
-        self.machine_production = {} # Production tracking
+        # REMOVED DUPLICATE: The block below was RE-initializing entities that were already set up earlier
+        # This was WIPING OUT self.operators after _initialize_all_operators() populated it!
+        # Keeping only cameras and conveyors which are legitimately initialized here
         
-        # Shift State
-        self.shift_elapsed_hours = 0.0
-        self.current_shift = "A"
-        
-        # Entities
-        self.operators = []
+        # Supervisor & Maintenance Crew (Restored)
         self.supervisor = {
             "x": self.canvas_width - 50, 
             "y": int(self.canvas_height * 0.7),
@@ -349,24 +335,22 @@ class SimulationService:
         logger.info(f"👥 3-shift system: {len(self.all_operators)} total operators (5 per shift)")
     
     def _initialize_cameras(self) -> List[Dict[str, Any]]:
-        """Initialize fixed cameras."""
+        """Initialize fixed cameras using layout service configuration."""
         cameras = []
-        # 4 cameras in corners of production floor
-        positions = [
-            (50, 50),   # Top Left
-            (650, 50),  # Top Right
-            (50, 450),  # Bottom Left
-            (650, 450)  # Bottom Right (moved up slightly)
-        ]
+        # Inherit cameras directly from layout to ensure ID and position sync with frontend
+        layout_cameras = self.layout.get("cameras", [])
         
-        for i, (x, y) in enumerate(positions):
-            cameras.append({
-                "id": f"cam_{i+1}",
-                "x": x,
-                "y": y,
-                "range": 250,
-                "active": True
-            })
+        if not layout_cameras:
+            logger.warning("⚠️ No cameras found in layout configuration!")
+            return []
+
+        for cam in layout_cameras:
+            # Create a localized copy for simulation state
+            sim_cam = cam.copy()
+            sim_cam["active"] = True
+            cameras.append(sim_cam)
+            
+        logger.info(f"📹 Initialized {len(cameras)} cameras from layout")
         return cameras
 
     def _initialize_production_state(self):
@@ -792,6 +776,8 @@ class SimulationService:
                 all_operators_data[op["id"]] = {
                     "id": op["id"],
                     "name": op["name"],
+                    "x": op["x"],  # CRITICAL: Must include position for backend state sync
+                    "y": op["y"],
                     "fatigue": op["fatigue"],
                     "on_break": op["on_break"],
                     "break_requested": op["break_requested"],

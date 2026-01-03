@@ -434,7 +434,7 @@ Output the detailed calculations and final posteriors according to the schema.
         confidence = result.leader_confidence
         converged = result.converged
         
-        logger.info(f"✅ Beliefs updated. Leader confidence: {confidence:.2f} ({result.reasoning[:50]}...)")
+        logger.debug(f"✅ Beliefs updated. Leader confidence: {confidence:.2f} ({result.reasoning[:50]}...)")
         
     except Exception as e:
         logger.error(f"Failed to update beliefs: {e}")

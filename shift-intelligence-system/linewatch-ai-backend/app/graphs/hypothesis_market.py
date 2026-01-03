@@ -245,7 +245,7 @@ async def run_hypothesis_market(
         conn = await aiosqlite.connect(checkpoint_path)
         
         # MONKEY PATCH: LangGraph's AsyncSqliteSaver expects 'is_alive'
-        conn.is_alive = True
+        conn.is_alive = lambda: True
         
         # Create AsyncSqliteSaver
         checkpointer = AsyncSqliteSaver(conn)
