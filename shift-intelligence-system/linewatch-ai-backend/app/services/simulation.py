@@ -26,6 +26,7 @@ from app.utils.logging import get_agent_logger
 from app.services.layout_service import layout_service
 # Import the new models
 from app.models.domain import SimulationState, FinancialState, PerformanceMetrics
+from app.services.experiment_service import experiment_service
 
 logger = get_agent_logger("Simulation")
 
@@ -341,6 +342,8 @@ class SimulationService:
         # ASYNC TASK TRACKING (for proper cancellation)
         # =================================================================
         self.pending_tasks: set = set()  # Track spawned async tasks
+        
+        self.last_log_sim_hour = 0.0  # For experiment logging
         
         logger.info(f"🏭 SimulationService initialized with {len(self.machine_production)} production lines")
         logger.info(f"👥 3-shift system: {len(self.all_operators)} total operators (5 per shift)")
@@ -699,6 +702,32 @@ class SimulationService:
                 start_time = datetime.now()
                 await self._tick()
                 
+                # LOG EXPERIMENT DATA (Every 0.1 sim hours)
+                if self.simulation_hours - self.last_log_sim_hour >= 0.1:
+                    self.last_log_sim_hour = self.simulation_hours
+                    # Prepare log state
+                    # We access shared_context here for full data
+                    from app.state.context import shared_context
+                    log_state = {
+                        "simulation_hours": self.simulation_hours,
+                        "kpi": {
+                            "oee": self.kpi.oee,
+                            "safety_score": self.kpi.safety_score,
+                        },
+                        "financials": {
+                            "total_revenue": self.financials.total_revenue,
+                            "total_expenses": self.financials.total_expenses,
+                            "balance": self.financials.balance,
+                        },
+                        "active_alerts": shared_context.active_alerts,
+                        "safety_violations": shared_context.safety_violations,
+                        "production_rate": self.production_rate_per_min,
+                        "inventory": self.warehouse_inventory,
+                        # For hackathon, assume token stats are tracked globally or mock
+                        "agent_stats": {"total_tokens_in": 0, "total_tokens_out": 0} 
+                    }
+                    await experiment_service.log_tick(log_state)
+
                 elapsed = (datetime.now() - start_time).total_seconds()
                 sleep_time = max(0.1, (self.tick_rate / settings.simulation_speed) - elapsed)
                 await asyncio.sleep(sleep_time)
