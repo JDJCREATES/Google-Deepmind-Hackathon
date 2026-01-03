@@ -7,6 +7,7 @@ from app.tools.production.metrics_tools import (
     request_maintenance,
     check_line_staffing,
 )
+from app.tools.production.control_tools import set_production_speed
 
 __all__ = [
     "get_line_metrics",
@@ -15,4 +16,5 @@ __all__ = [
     "predict_bottleneck",
     "request_maintenance",
     "check_line_staffing",
+    "set_production_speed",
 ]

@@ -17,11 +17,15 @@ import random
 import math
 from datetime import datetime
 from typing import Dict, Any, List, Optional
+import json
+import os
 
 from app.config import settings
 from app.services.websocket import manager
 from app.utils.logging import get_agent_logger
 from app.services.layout_service import layout_service
+# Import the new models
+from app.models.domain import SimulationState, FinancialState, PerformanceMetrics
 
 logger = get_agent_logger("Simulation")
 
@@ -35,31 +39,29 @@ PRODUCT_CATALOG: Dict[str, Dict[str, Any]] = {
         "color": "#3B82F6",  # Blue
         "base_time": 70,      # Seconds to fill large box (reduced from 90)
         "small_per_large": (8, 12),  # Range of small boxes per large
+        "price": 12.0,       # Sale price
     },
     "widget_b": {
         "name": "Widget B",
         "color": "#10B981",  # Green
         "base_time": 60,  # Reduced from 75
         "small_per_large": (10, 15),
+        "price": 10.0,
     },
     "gizmo_x": {
         "name": "Gizmo X",
         "color": "#F59E0B",  # Amber
         "base_time": 95,  # Reduced from 120
         "small_per_large": (6, 10),
+        "price": 18.0,
     },
-    "gizmo_y": {
-        "name": "Gizmo Y",
-        "color": "#EF4444",  # Red
-        "base_time": 80,  # Reduced from 100
-        "small_per_large": (8, 14),
-    },
-    "part_z": {
-        "name": "Part Z",
-        "color": "#8B5CF6",  # Purple
-        "base_time": 50,  # Reduced from 60
-        "small_per_large": (12, 18),
-    },
+    "drone_chassis": {
+        "name": "Drone Chassis",
+        "color": "#8B5CF6",  # Violet
+        "base_time": 150,
+        "small_per_large": (4, 6),
+        "price": 45.0,
+    }
 }
 
 
@@ -273,51 +275,67 @@ class SimulationService:
         # =================================================================
         # SUPERVISOR
         # =================================================================
-        # Supervisor spawns in office area (bottom-right)
-        office_x = self.canvas_width - 50  # Right side, in office zone
-        office_y = int(self.canvas_height * 0.7)  # Lower area
+        # Find the production zone for pathfinding bounds
+        self.production_zone = next(
+            (z for z in self.layout["zones"] if z["id"] == "production_floor"), 
+            {"x": 0, "y": 0, "width": self.canvas_width, "height": self.canvas_height} # Fallback
+        )
         
+        # =====================================================================
+        # STATE & PERSISTENCE
+        # =====================================================================
+        self.state_file_path = "data/simulation_state.json"
+        
+        # Initialize Financials (Will be overwritten by load_state if exists)
+        self.financials = FinancialState(
+            balance=10000.0,
+            hourly_wage_cost=0.0
+        )
+        
+        # Initialize KPIs (New)
+        self.kpi = PerformanceMetrics(
+            oee=1.0,
+            availability=1.0,
+            performance=1.0,
+            safety_score=100.0
+        )
+        
+        # Initialize Warehouse Inventory
+        self.warehouse_inventory = {k: 0 for k in PRODUCT_CATALOG.keys()}
+        
+        # Machine State
+        self.line_health = {i: 100.0 for i in range(1, settings.num_production_lines + 1)}
+        self.machines = {} # Detailed machine objects
+        self.machine_production = {} # Production tracking
+        
+        # Shift State
+        self.shift_elapsed_hours = 0.0
+        self.current_shift = "A"
+        
+        # Entities
+        self.operators = []
         self.supervisor = {
-            "id": "SUP-01",
-            "name": "Supervisor",
-            "x": office_x,
-            "y": office_y,
+            "x": self.canvas_width - 50, 
+            "y": int(self.canvas_height * 0.7),
             "status": "idle",
             "current_action": "monitoring",
-            "target_x": office_x,
-            "target_y": office_y,
-            "assigned_operator_id": None,
             "path": [],
             "path_index": 0,
-            "office_x": office_x,  # Store office location
-            "office_y": office_y
+            "assigned_operator_id": None
         }
-        
-        
-        # Cameras for detection logic
-        self.cameras = self.layout.get("cameras", [])
-
-        # =================================================================
-        # MAINTENANCE CREW (NEW)
-        # =================================================================
-        # Start in maintenance zone (top-left)
-        maint_x = 50
-        maint_y = 30
         self.maintenance_crew = {
-            "id": "MAINT-01",
-            "name": "Maintenance Crew",
-            "x": maint_x,
-            "y": maint_y,
-            "status": "idle", # idle, moving, repairing, returning
-            "target_machine_id": None,
-            "target_x": maint_x,
-            "target_y": maint_y,
+            "x": 60,
+            "y": 40,
+            "status": "idle",
+            "current_action": "standby",
             "path": [],
             "path_index": 0,
-            "base_x": maint_x,
-            "base_y": maint_y,
-            "repair_timer": 0.0
+            "assigned_machine_id": None
         }
+        
+        self.cameras = self._initialize_cameras()
+        self.conveyors = self.layout["conveyors"]
+        self.conveyor_boxes = [] # Boxes on conveyor
         
         # =================================================================
         # ASYNC TASK TRACKING (for proper cancellation)
@@ -327,6 +345,27 @@ class SimulationService:
         logger.info(f"🏭 SimulationService initialized with {len(self.machine_production)} production lines")
         logger.info(f"👥 3-shift system: {len(self.all_operators)} total operators (5 per shift)")
     
+    def _initialize_cameras(self) -> List[Dict[str, Any]]:
+        """Initialize fixed cameras."""
+        cameras = []
+        # 4 cameras in corners of production floor
+        positions = [
+            (50, 50),   # Top Left
+            (650, 50),  # Top Right
+            (50, 450),  # Bottom Left
+            (650, 450)  # Bottom Right (moved up slightly)
+        ]
+        
+        for i, (x, y) in enumerate(positions):
+            cameras.append({
+                "id": f"cam_{i+1}",
+                "x": x,
+                "y": y,
+                "range": 250,
+                "active": True
+            })
+        return cameras
+
     def _initialize_production_state(self):
         """Initialize production state for each machine line."""
         product_types = list(PRODUCT_CATALOG.keys())
@@ -356,6 +395,7 @@ class SimulationService:
                 "large_box_fill_level": 0.0,
                 "elapsed_time": 0.0,
                 "is_running": True,
+                "target_speed_pct": 100.0,  # NEW: Agent controllable setting (100% = normal)
                 
                 # Position (for box spawning)
                 "x": line["x"],
@@ -439,6 +479,156 @@ class SimulationService:
         self.operators = [op for op in self.all_operators if op["shift"] == "A"]
         logger.info(f"👥 Initialized {len(self.all_operators)} operators, Shift A active ({len(self.operators)} operators)")
     
+    def _load_state(self):
+        """Load simulation state from JSON persistence."""
+        if not os.path.exists(self.state_file_path):
+            logger.info("🆕 No saved state found. Starting fresh simulation.")
+            return
+
+        try:
+            with open(self.state_file_path, "r") as f:
+                data = json.load(f)
+            
+            # Restore Financials
+            fin_data = data.get("financials", {})
+            self.financials.balance = fin_data.get("balance", 10000.0)
+            self.financials.total_revenue = fin_data.get("total_revenue", 0.0)
+            self.financials.total_expenses = fin_data.get("total_expenses", 0.0)
+            
+            # Restore KPIs
+            kpi_data = data.get("kpi", {})
+            self.kpi.oee = kpi_data.get("oee", 1.0)
+            self.kpi.safety_score = kpi_data.get("safety_score", 100.0)
+            self.kpi.availability = kpi_data.get("availability", 1.0)
+            self.kpi.performance = kpi_data.get("performance", 1.0)
+            self.kpi.uptime_hours = kpi_data.get("uptime_hours", 0.0)
+            
+            logger.info(f"💾 Loaded simulation state. Balance: ${self.financials.balance:,.2f}, OEE: {self.kpi.oee:.1%}")
+            
+            # Restore Inventory
+            self.warehouse_inventory = data.get("inventory", self.warehouse_inventory)
+            
+            # Restore Machine Health (Key is string in JSON, convert to int)
+            saved_health = data.get("line_health", {})
+            for k, v in saved_health.items():
+                self.line_health[int(k)] = v
+                
+            self.shift_elapsed_hours = data.get("shift_elapsed_hours", 0.0)
+            
+
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to load simulation state: {e}")
+
+    def _save_state(self):
+        """Save simulation state to JSON persistence."""
+        try:
+            os.makedirs(os.path.dirname(self.state_file_path), exist_ok=True)
+            
+            state = {
+                "timestamp": datetime.now().isoformat(),
+                "financials": {
+                    "balance": self.financials.balance,
+                    "total_revenue": self.financials.total_revenue,
+                    "total_expenses": self.financials.total_expenses
+                },
+                "kpi": {
+                    "oee": self.kpi.oee,
+                    "safety_score": self.kpi.safety_score,
+                    "availability": self.kpi.availability,
+                    "performance": self.kpi.performance,
+                    "uptime_hours": self.kpi.uptime_hours
+                },
+                "inventory": self.warehouse_inventory,
+                "line_health": self.line_health,
+                "shift_elapsed_hours": self.shift_elapsed_hours
+            }
+            
+            with open(self.state_file_path, "w") as f:
+                json.dump(state, f, indent=2)
+                
+        except Exception as e:
+            logger.error(f"❌ Failed to save simulation state: {e}")
+
+    def _calculate_metrics(self, tick_seconds: float):
+        """Calculate OEE and Safety Score."""
+        # 1. Availability (Are machines operational?)
+        total_lines = len(self.machines)
+        if total_lines == 0:
+            return
+            
+        operational_lines = sum(1 for m in self.machines.values() if m["status"] == "operational")
+        current_availability = operational_lines / total_lines
+        
+        # Simple rolling average for smoothness
+        alpha = 0.05
+        self.kpi.availability = (self.kpi.availability * (1 - alpha)) + (current_availability * alpha)
+        
+        # 2. Performance (Are they running at speed?)
+        # For simulation, we assume operational lines run at 100% speed unless health degraded
+        # Simplified: Performance = Average Health of Operational Lines / 100
+        if operational_lines > 0:
+            avg_health = sum(self.line_health[m["id"]] for m in self.machines.values() if m["status"] == "operational") / operational_lines
+            current_performance = avg_health / 100.0
+        else:
+            current_performance = 0.0
+            
+        self.kpi.performance = (self.kpi.performance * (1 - alpha)) + (current_performance * alpha)
+        
+        # 3. OEE
+        self.kpi.oee = self.kpi.availability * self.kpi.performance
+        
+        # 4. Safety Recovery
+        # Slowly recover safety score if above 0 (0.1% per tick)
+        if self.kpi.safety_score < 100.0:
+            self.kpi.safety_score = min(100.0, self.kpi.safety_score + 0.005)
+            
+        # 5. Uptime
+        self.kpi.uptime_hours += (tick_seconds / 3600.0)
+
+    def _calculate_wage_costs(self):
+        """Calculate hourly wage cost based on active staff."""
+        # Configurable wages
+        OPERATOR_WAGE = 30.0  # $/hr
+        SUPERVISOR_WAGE = 60.0 # $/hr
+        
+        op_count = len([o for o in self.operators if o.get("is_active", True)])
+        self.financials.hourly_wage_cost = (op_count * OPERATOR_WAGE) + SUPERVISOR_WAGE
+        
+    def _process_finances(self, tick_seconds: float):
+        """Deduct wages and simulate constant operating costs."""
+        # Calculate cost per second
+        cost_per_second = self.financials.hourly_wage_cost / 3600.0
+        tick_cost = cost_per_second * tick_seconds
+        
+        self.financials.balance -= tick_cost
+        self.financials.total_expenses += tick_cost
+        
+    def _process_market_sales(self):
+        """Simulate market demand consuming inventory."""
+        # 5% chance per tick to make a sale
+        if random.random() < 0.05:
+            # Pick a product with inventory
+            available_products = [p for p, count in self.warehouse_inventory.items() if count > 0]
+            
+            if available_products:
+                product_key = random.choice(available_products)
+                qty = random.randint(1, 5) # Sell 1-5 units
+                
+                # Check supply
+                qty = min(qty, self.warehouse_inventory[product_key])
+                
+                if qty > 0:
+                    price = PRODUCT_CATALOG[product_key]["price"]
+                    revenue = qty * price
+                    
+                    # Transaction
+                    self.warehouse_inventory[product_key] -= qty
+                    self.financials.balance += revenue
+                    self.financials.total_revenue += revenue
+                    
+                    logger.debug(f"💰 SOLD {qty}x {PRODUCT_CATALOG[product_key]['name']} for ${revenue:.2f}")
+
     def _reset_state(self):
         """Reset all production state (called on start)."""
         self._initialize_production_state()
@@ -625,6 +815,42 @@ class SimulationService:
             "data": self.warehouse_inventory.copy()
         })
         
+        # Broadcast Finance Update
+        await manager.broadcast({
+            "type": "financial_update",
+            "data": {
+                "balance": self.financials.balance,
+                "total_revenue": self.financials.total_revenue,
+                "total_expenses": self.financials.total_expenses,
+                "hourly_wage_cost": self.financials.hourly_wage_cost,
+                "last_updated": datetime.now().isoformat()
+            }
+        })
+        
+        # Broadcast KPI Update
+        await manager.broadcast({
+             "type": "kpi_update",
+             "data": {
+                 "oee": self.kpi.oee,
+                 "safety_score": self.kpi.safety_score,
+                 "availability": self.kpi.availability,
+                 "performance": self.kpi.performance, 
+                 "uptime_hours": self.kpi.uptime_hours
+             }
+         })
+        
+        # Broadcast KPI Update
+        await manager.broadcast({
+             "type": "kpi_update",
+             "data": {
+                 "oee": self.kpi.oee,
+                 "safety_score": self.kpi.safety_score,
+                 "availability": self.kpi.availability,
+                 "performance": self.kpi.performance, 
+                 "uptime_hours": self.kpi.uptime_hours
+             }
+         })
+        
         # Broadcast all events in a SINGLE batched message
         # This prevents overwhelming the WebSocket with 15-20+ messages per tick
         if events:
@@ -650,9 +876,21 @@ class SimulationService:
     def _update_line_health(self, events: List[Dict[str, Any]]):
         """Update machine health with natural degradation."""
         for line_id in self.line_health:
-            # Slow natural degradation
-            degradation = random.uniform(0, 0.05)
-            self.line_health[line_id] = max(0, self.line_health[line_id] - degradation)
+            # Natural degradation
+            base_degradation = random.uniform(0, 0.05)
+            
+            # Risk factor from high speed
+            target_speed = self.machine_production.get(line_id, {}).get("target_speed_pct", 100.0)
+            risk_multiplier = 1.0
+            if target_speed > 100.0:
+                # Exponential risk increase above 100%
+                # 110% speed = 1.2x wear
+                # 150% speed = 3.2x wear
+                excess = (target_speed - 100.0) / 100.0
+                risk_multiplier = 1.0 + (excess * 5.0) 
+            
+            total_degradation = base_degradation * risk_multiplier
+            self.line_health[line_id] = max(0, self.line_health[line_id] - total_degradation)
             
             events.append({
                 "type": "line_status",
@@ -677,9 +915,11 @@ class SimulationService:
                 prod_state["is_running"] = True
                 speed_modifier = 0.5
             else:
-                # Normal - speed proportional to health
+                # Normal - Speed depends on HEALTH and TARGET SETTING
+                health_factor = machine_health / 100.0
+                target_factor = prod_state.get("target_speed_pct", 100.0) / 100.0
                 prod_state["is_running"] = True
-                speed_modifier = machine_health / 100.0
+                speed_modifier = health_factor * target_factor
             
             # === PRODUCTION PROGRESS ===
             if prod_state["is_running"] and speed_modifier > 0:
@@ -1020,6 +1260,50 @@ class SimulationService:
                         op["current_action"] = "patrolling"
                     # If no path found, stay in place
     
+    async def run(self):
+        """Main simulation loop."""
+        self.is_running = True
+        logger.info("🚀 Simulation started (Economy Enabled)")
+        
+        self.tick_rate = 0.5  # Seconds per tick
+        ticks = 0
+        
+        while self.is_running:
+            start_time = datetime.now()
+            
+            # 1. Update Entities
+            self._move_agents()
+            self._update_conveyors()
+            self._update_production_progress()
+            self._update_operator_fatigue()
+            
+            # 2. Economy & Sales & Metrics
+            self._process_finances(self.tick_rate)
+            self._process_market_sales()
+            self._calculate_metrics(self.tick_rate)
+            
+            # 3. Events & Anomalies
+            events = self._check_cameras()
+            
+            # Saving State (Every 100 ticks ~50s)
+            if ticks % 100 == 0:
+                self._save_state()
+
+            # Random Breakdown (approx every 3 mins for demo)
+            if random.random() < (0.003 * self.tick_rate): 
+                breakdown_event = self._generate_breakdown()
+                events.append(breakdown_event)
+            
+            # Broadcast updates
+            await self._broadcast_state(events)
+            
+            ticks += 1
+            
+            # Maintain tick rate
+            elapsed = (datetime.now() - start_time).total_seconds()
+            sleep_time = max(0, self.tick_rate - elapsed)
+            await asyncio.sleep(sleep_time)
+    
     def _update_operator_fatigue(self):
         """Accumulate operator fatigue and handle break requests."""
         # Fatigue constants - TUNED
@@ -1290,6 +1574,22 @@ class SimulationService:
                 return True
         return False
 
+    def set_line_speed(self, line_id: int, speed_pct: float) -> bool:
+        """
+        External command to set production line target speed.
+        Used by Production Agent.
+        """
+        if line_id not in self.machine_production:
+            logger.warning(f"⚠️ Cannot set speed for invalid line {line_id}")
+            return False
+            
+        # Clamp speed between 0% and 200%
+        safe_speed = max(0.0, min(200.0, speed_pct))
+        self.machine_production[line_id]["target_speed_pct"] = safe_speed
+        
+        logger.info(f"⚙️ Line {line_id} target speed set to {safe_speed}%")
+        return True
+
     def get_visible_operator_ids(self) -> List[str]:
         """
         Get IDs of operators currently visible to cameras.
@@ -1546,7 +1846,12 @@ class SimulationService:
         if machine_id in self.machine_production:
              self.machine_production[machine_id]["is_running"] = True
         
-        logger.info(f"✅ Line {machine_id} repaired by Maintenance Crew")
+        # Determine repair cost
+        repair_cost = 500.0
+        self.financials.balance -= repair_cost
+        self.financials.total_expenses += repair_cost
+        
+        logger.info(f"✅ Line {machine_id} repaired by Maintenance Crew (-${repair_cost:.2f})")
         
         # Return to base
         self.maintenance_crew["status"] = "returning"

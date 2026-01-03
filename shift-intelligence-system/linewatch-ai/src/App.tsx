@@ -8,7 +8,7 @@ import clsx from 'clsx';
 import { api } from './services/api';
 
 function App() {
-  const { connectWebSocket, isConnected, toggleSimulation } = useStore();
+  const { connectWebSocket, isConnected, toggleSimulation, financials, kpi } = useStore();
   const [simStatus, setSimStatus] = useState<{running: boolean, uptime: number} | null>(null);
 
   const handleToggleSimulation = async () => {
@@ -58,6 +58,74 @@ function App() {
                 type={simStatus?.running ? "success" : "warning"} 
             />
         </div>
+
+      {/* Financial Tracker (Responsive) */}
+      <div className="flex items-center gap-2 md:gap-4 lg:gap-8 mx-2 md:mx-4 overflow-x-auto no-scrollbar">
+        
+        {/* KPIs (OEE & Safety) */}
+        <div className="flex gap-3 md:gap-6 mr-3 md:mr-6 pr-3 md:pr-6 border-r border-stone-800/50 shrink-0">
+            <div className="flex flex-col items-end md:items-center">
+                <span className="text-[10px] text-stone-500 font-mono tracking-wider">OEE</span>
+                <span className={`font-mono font-bold text-sm md:text-lg leading-none tabular-nums ${
+                    kpi.oee >= 0.85 ? 'text-emerald-400' : kpi.oee >= 0.60 ? 'text-amber-400' : 'text-rose-400'
+                }`}>
+                    {(kpi.oee * 100).toFixed(0)}%
+                </span>
+            </div>
+            
+            <div className="flex flex-col items-end md:items-center">
+                <span className="text-[10px] text-stone-500 font-mono tracking-wider">SAFETY</span>
+                <span className={`font-mono font-bold text-sm md:text-lg leading-none tabular-nums ${
+                    kpi.safety_score >= 98 ? 'text-emerald-400' : 'text-rose-400'
+                }`}>
+                    {kpi.safety_score.toFixed(0)}%
+                </span>
+            </div>
+        </div>
+
+        {/* Balance */}
+        <div className="flex flex-col items-end md:items-center shrink-0">
+            <span className="hidden md:block text-[10px] text-stone-500 font-mono tracking-wider uppercase">Bank Balance</span>
+            <span className="md:hidden text-[8px] text-stone-500 font-mono tracking-wider uppercase">Bal</span>
+            <span className={`font-mono font-bold text-sm md:text-lg leading-none ${financials.balance < 0 ? 'text-red-500' : 'text-emerald-400'}`}>
+                ${financials.balance.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0})}
+            </span>
+        </div>
+
+        {/* Detailed Stats Block */}
+        <div className="flex items-center gap-3 md:gap-6 bg-stone-900/40 py-1 px-2 md:px-3 rounded border border-stone-800/30 shrink-0">
+            {/* Revenue */}
+            <div className="flex flex-col">
+                <span className="hidden md:block text-[9px] text-stone-600 font-mono uppercase">Revenue</span>
+                <span className="md:hidden text-[8px] text-stone-600 font-mono uppercase">Rev</span>
+                <span className="text-stone-400 font-mono text-[10px] md:text-xs">
+                    +${financials.total_revenue.toLocaleString(undefined, {maximumFractionDigits: 0})}
+                </span>
+            </div>
+            
+            <div className="h-4 md:h-5 w-px bg-stone-800"></div>
+
+            {/* Expenses */}
+            <div className="flex flex-col">
+                <span className="hidden md:block text-[9px] text-stone-600 font-mono uppercase">Expenses</span>
+                <span className="md:hidden text-[8px] text-stone-600 font-mono uppercase">Exp</span>
+                <span className="text-stone-400 font-mono text-[10px] md:text-xs">
+                    -${financials.total_expenses.toLocaleString(undefined, {maximumFractionDigits: 0})}
+                </span>
+            </div>
+            
+            <div className="h-4 md:h-5 w-px bg-stone-800"></div>
+
+            {/* Burn Rate */}
+            <div className="flex flex-col">
+                <span className="hidden md:block text-[9px] text-stone-600 font-mono uppercase">Burn Rate</span>
+                <span className="md:hidden text-[8px] text-stone-600 font-mono uppercase">Burn</span>
+                <span className="text-orange-900/80 font-mono text-[10px] md:text-xs">
+                    -${financials.hourly_wage_cost.toFixed(0)}/h
+                </span>
+            </div>
+        </div>
+      </div>
 
         <div className="flex items-center gap-2">
             <ActionButton 

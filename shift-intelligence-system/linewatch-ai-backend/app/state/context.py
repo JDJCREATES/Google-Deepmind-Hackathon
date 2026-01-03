@@ -50,17 +50,23 @@ class SharedContext:
         """Add a new alert to the system."""
         async with self._lock:
             self.active_alerts.append(alert)
+            if len(self.active_alerts) > 1000:
+                self.active_alerts = self.active_alerts[-1000:]
             self.department.active_alerts.append(alert)
     
     async def add_safety_violation(self, violation: SafetyViolation):
         """Register a safety violation detected by camera."""
         async with self._lock:
             self.safety_violations.append(violation)
+            if len(self.safety_violations) > 1000:
+                self.safety_violations = self.safety_violations[-1000:]
     
     async def add_decision(self, decision: Decision):
         """Log an agent decision with reasoning."""
         async with self._lock:
             self.decisions.append(decision)
+            if len(self.decisions) > 1000:
+                self.decisions = self.decisions[-1000:]
     
     async def get_active_alerts(self, severity: Optional[str] = None) -> List[Alert]:
         """Get all active (unresolved) alerts, optionally filtered by severity."""

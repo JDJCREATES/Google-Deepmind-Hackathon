@@ -15,7 +15,9 @@ from app.tools.production import (
     analyze_throughput_trend,
     predict_bottleneck,
     request_maintenance,
+    request_maintenance,
     check_line_staffing,
+    set_production_speed,
 )
 from app.models.domain import LineStatus, AlertSeverity
 from app.utils.logging import get_agent_logger
@@ -47,7 +49,10 @@ class ProductionAgent(BaseAgent):
             analyze_throughput_trend,
             predict_bottleneck,
             request_maintenance,
+            predict_bottleneck,
+            request_maintenance,
             check_line_staffing,
+            set_production_speed,
         ]
         
         super().__init__(

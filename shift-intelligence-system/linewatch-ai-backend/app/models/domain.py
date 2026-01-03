@@ -150,3 +150,33 @@ class Decision:
     confidence: float  # 0.0 to 1.0
     actions_taken: List[str] = field(default_factory=list)
     escalated: bool = False
+
+@dataclass
+class FinancialState:
+    """Financial tracking state."""
+    balance: float = 10000.0
+    total_revenue: float = 0.0
+    total_expenses: float = 0.0
+    hourly_wage_cost: float = 0.0
+    last_updated: datetime = field(default_factory=datetime.now)
+
+@dataclass
+class PerformanceMetrics:
+    """Key Performance Indicators (KPIs)."""
+    oee: float = 1.0  # Overall Equipment Effectiveness (0.0 - 1.0)
+    availability: float = 1.0
+    performance: float = 1.0
+    quality: float = 1.0
+    safety_score: float = 100.0  # 0 - 100
+    uptime_hours: float = 0.0
+    last_incident: Optional[datetime] = None
+
+@dataclass
+class SimulationState:
+    """Complete state of the simulation for persistence."""
+    timestamp: datetime = field(default_factory=datetime.now)
+    financials: FinancialState = field(default_factory=FinancialState)
+    kpi: PerformanceMetrics = field(default_factory=PerformanceMetrics)
+    inventory: Dict[str, int] = field(default_factory=dict)
+    line_health: Dict[str, float] = field(default_factory=dict)
+    shift_elapsed_hours: float = 0.0

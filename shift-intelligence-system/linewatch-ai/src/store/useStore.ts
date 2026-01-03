@@ -97,14 +97,107 @@ export interface MachineProductionState {
     is_running: boolean;
 }
 
-// Supervisor Entity (NEW)
-export interface Supervisor {
+export interface SupervisorState {
     id: string;
-    name: string;
     x: number;
     y: number;
-    status: string; // 'idle', 'moving_to_operator', 'relieving', 'returning'
+    status: string;
     current_action: string;
+    assigned_operator_id?: string;
+    path_index: number;
+    target_x?: number;
+    target_y?: number;
+}
+
+// Maintenance Crew Entity
+export interface MaintenanceCrewState {
+    x: number;
+    y: number;
+    status: string;
+    current_action: string;
+    assigned_machine_id?: string;
+}
+
+// NEW: Financial State
+export interface FinancialState {
+    balance: number;
+    total_revenue: number;
+    total_expenses: number;
+    hourly_wage_cost: number;
+    last_updated: string;
+}
+
+// NEW: Performance Metrics
+export interface PerformanceMetrics {
+    oee: number;
+    availability: number;
+    performance: number;
+    safety_score: number;
+    uptime_hours: number;
+}
+
+// NEW: Full Simulation State
+export interface SimulationState {
+    timestamp: string;
+    financials: FinancialState;
+    kpi: PerformanceMetrics;
+    inventory: WarehouseInventory;
+    line_health: {[key: string]: number};
+    shift_elapsed_hours: number;
+}
+
+
+export interface StoreState {
+    // NEW: Financials & Metrics
+    financials: FinancialState;
+    kpi: PerformanceMetrics;
+    
+    // Layout
+    dimensions: { width: number; height: number };
+    zones: ZoneData[];
+    
+    // Entities
+    machines: MachineData[];
+    cameras: CameraData[];
+    conveyors: ConveyorData[];
+    conveyorBoxes: ConveyorBox[];
+    operators: OperatorData[];
+    supervisor: SupervisorState | null;
+    maintenanceCrew: MaintenanceCrewState | null;
+    
+    // NEW: Financials
+    financials: FinancialState;
+    
+    // State
+    warehouseInventory: WarehouseInventory;
+    machineProduction: {[key: number]: MachineProductionState};
+    
+    // Actions
+    setDimensions: (width: number, height: number) => void;
+    setZones: (zones: ZoneData[]) => void;
+    setMachines: (machines: MachineData[]) => void;
+    updateMachine: (id: number, data: Partial<MachineData>) => void;
+    setCameras: (cameras: CameraData[]) => void;
+    setConveyors: (conveyors: ConveyorData[]) => void;
+    setOperators: (operators: OperatorData[]) => void;
+    updateOperator: (id: string, data: Partial<OperatorData>) => void;
+    setSupervisor: (supervisor: SupervisorState) => void;
+    setMaintenanceCrew: (crew: MaintenanceCrewState) => void;
+    
+    // Logs (Persisted)
+    logs: LogEntry[];
+    addLog: (log: LogEntry) => void;
+    clearLogs: () => void;
+    setLogs: (logs: LogEntry[]) => void;
+    
+    // Selection
+    selectedEntityId: string | null;
+    selectedEntityType: 'operator' | 'machine' | 'camera' | 'supervisor' | null;
+    setSelectedEntity: (id: string | null, type: 'operator' | 'machine' | 'camera' | 'supervisor' | null) => void;
+    
+    // Simulation Control
+    simStatus: { running: boolean; uptime: number };
+    setSimStatus: (status: { running: boolean; uptime: number }) => void;
 }
 
 export interface LogEntry {
@@ -172,6 +265,23 @@ export const useStore = create<State>()(
     supervisor: null,
     operators: {},
     maintenanceCrew: null,
+
+    // NEW: Financials Initial State
+    financials: {
+        balance: 10000.0,
+        total_revenue: 0.0,
+        total_expenses: 0.0,
+        hourly_wage_cost: 0.0,
+        last_updated: new Date().toISOString()
+    },
+    
+    kpi: {
+        oee: 1.0,
+        availability: 1.0,
+        performance: 1.0,
+        safety_score: 100.0,
+        uptime_hours: 0.0
+    },
 
     fetchLayout: async () => {
         set({ isLoading: true });
@@ -388,6 +498,18 @@ export const useStore = create<State>()(
                 // Global inventory update
                 if (message.type === 'inventory_update') {
                      set({ warehouseInventory: message.data });
+                     return;
+                }
+                
+                // Financial update (NEW)
+                if (message.type === 'financial_update') {
+                    set({ financials: message.data });
+                    return;
+                }
+                
+                // KPI update (NEW)
+                if (message.type === 'kpi_update') {
+                     set({ kpi: message.data });
                      return;
                 }
                 

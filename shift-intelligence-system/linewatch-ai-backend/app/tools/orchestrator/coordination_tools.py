@@ -193,3 +193,39 @@ async def get_all_agent_status() -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"❌ Error getting agent status: {e}")
         raise
+
+
+@tool
+async def read_kpis() -> Dict[str, Any]:
+    """
+    Read current Key Performance Indicators (OEE, Safety, Finance).
+    
+    Use this to assess long-term success and determine if strategic changes
+    are needed (e.g. slowing down for safety or speeding up for OEE).
+    
+    Returns:
+        Dictionary containing OEE, Safety Score, Balance, etc.
+    """
+    try:
+        # Import inside function to avoid circular imports
+        from app.services.simulation import simulation
+        
+        kpi = simulation.kpi
+        fin = simulation.financials
+        
+        return {
+            "oee": kpi.oee,
+            "oee_percent": f"{kpi.oee*100:.1f}%",
+            "safety_score": kpi.safety_score,
+            "availability": kpi.availability,
+            "performance": kpi.performance,
+            "financials": {
+                "balance": fin.balance,
+                "revenue": fin.total_revenue,
+                "expenses": fin.total_expenses,
+                "burn_rate": fin.hourly_wage_cost
+            }
+        }
+    except Exception as e:
+        logger.error(f"❌ Error reading KPIs: {e}")
+        return {"error": str(e)}
