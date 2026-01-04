@@ -46,7 +46,8 @@ logger = get_agent_logger("HypothesisNodes")
 
 # Shared instances
 drift_detector = FrameworkDriftDetector()
-strategic_memory = StrategicMemory()
+# strategic_memory is now imported as a persistent singleton
+from app.reasoning.counterfactual import strategic_memory
 
 
 # ==========================================
@@ -115,10 +116,14 @@ async def classify_frameworks_node(state: HypothesisMarketState) -> Dict[str, An
         temperature=0.3,
     )
     
-    # Use structured output for guaranteed schema compliance
-    structured_llm = llm.with_structured_output(FrameworkClassification)
+    # We need raw access for thought signatures, so we don't use with_structured_output directly on the LLM
+    # Instead we use a parser
+    from langchain_core.output_parsers import PydanticOutputParser
+    from langchain_core.prompts import ChatPromptTemplate
     
-    prompt = f"""
+    parser = PydanticOutputParser(pydantic_object=FrameworkClassification)
+    
+    prompt_text = f"""
 Classify which epistemic frameworks apply to this manufacturing signal.
 
 SIGNAL: {state['signal_description']}
@@ -132,16 +137,47 @@ AVAILABLE FRAMEWORKS:
 5. HACCP - For "Are we violating compliance?" food safety
 
 Select at least 2 relevant frameworks.
+
+{parser.get_format_instructions()}
 """
+    
+    messages = [HumanMessage(content=prompt_text)]
+    
+    # Inject thought signature if present (continuity)
+    if state.get("thought_signature"):
+        messages.append({
+            "role": "model",
+            "parts": [{"thought_signature": state["thought_signature"]}]
+        })
 
     try:
-        result = await structured_llm.ainvoke(prompt)
+        # Raw invoke to get message with potential thought signature
+        msg = await llm.ainvoke(messages)
+        
+        # 1. Parse content
+        result = parser.parse(msg.content)
         frameworks = result.frameworks
         reasoning = result.reasoning
+        
+        # 2. Extract Thought Signature
+        new_sig = None
+        if hasattr(msg, 'content') and isinstance(msg.content, list):
+             for part in msg.content:
+                 if isinstance(part, dict) and 'thought_signature' in part:
+                     new_sig = part['thought_signature']
+                     break
+        elif hasattr(msg, 'content') and isinstance(msg.content, dict) and 'thought_signature' in msg.content:
+             new_sig = msg.content['thought_signature']
+             
+        if new_sig:
+            logger.debug("Captured thought signature from classify_frameworks")
+
         logger.info(f"✅ Classified frameworks: {frameworks} ({reasoning})")
+        
     except Exception as e:
         logger.error(f"Failed to classify frameworks: {e}")
         frameworks = ["RCA", "TOC"]  # Fallback
+        new_sig = state.get("thought_signature") # Preserve old if failed
     
     logger.info(f"✅ Applicable frameworks: {frameworks}")
     
@@ -149,7 +185,10 @@ Select at least 2 relevant frameworks.
     updated_data = dict(state.get("signal_data", {}))
     updated_data["applicable_frameworks"] = frameworks
     
-    return {"signal_data": updated_data}
+    return {
+        "signal_data": updated_data,
+        "thought_signature": new_sig
+    }
 
 
 async def generate_hypotheses_node(state: HypothesisMarketState) -> Dict[str, Any]:
@@ -407,10 +446,10 @@ async def update_beliefs_node(state: HypothesisMarketState) -> Dict[str, Any]:
         temperature=0.2,  # Low for precise reasoning
     )
     
-    # Use structured output for guaranteed schema compliance
-    structured_llm = llm.with_structured_output(BeliefUpdateResult)
+    from langchain_core.output_parsers import PydanticOutputParser
+    parser = PydanticOutputParser(pydantic_object=BeliefUpdateResult)
     
-    prompt = f"""
+    prompt_text = f"""
 Perform Bayesian belief update for these hypotheses given the evidence.
 
 HYPOTHESES:
@@ -425,14 +464,41 @@ For each hypothesis:
 3. Ensure posteriors sum to approximately 1.0
 
 Output the detailed calculations and final posteriors according to the schema.
+
+{parser.get_format_instructions()}
 """
 
+    messages = [HumanMessage(content=prompt_text)]
+    
+    # Inject thought signature for continuity
+    if state.get("thought_signature"):
+        messages.append({
+            "role": "model",
+            "parts": [{"thought_signature": state["thought_signature"]}]
+        })
+
     try:
-        result = await structured_llm.ainvoke(prompt)
+        msg = await llm.ainvoke(messages)
+        
+        # 1. Parse content
+        result = parser.parse(msg.content)
         posteriors = result.posteriors
         leading = result.leading_hypothesis_id
         confidence = result.leader_confidence
         converged = result.converged
+        
+        # 2. Extract Thought Signature
+        new_sig = None
+        if hasattr(msg, 'content') and isinstance(msg.content, list):
+             for part in msg.content:
+                 if isinstance(part, dict) and 'thought_signature' in part:
+                     new_sig = part['thought_signature']
+                     break
+        elif hasattr(msg, 'content') and isinstance(msg.content, dict) and 'thought_signature' in msg.content:
+             new_sig = msg.content['thought_signature']
+        
+        if new_sig:
+             logger.debug("Captured thought signature from update_beliefs")
         
         logger.debug(f"✅ Beliefs updated. Leader confidence: {confidence:.2f} ({result.reasoning[:50]}...)")
         
@@ -464,6 +530,7 @@ Output the detailed calculations and final posteriors according to the schema.
         "belief_state": belief_state,
         "converged": converged,
         "iteration": state.get("iteration", 0) + 1,
+        "thought_signature": new_sig
     }
 
 
@@ -584,6 +651,19 @@ Output JSON with these fields.
 
     result = await llm.ainvoke(prompt)
     
+    # Extract insight from LLM response
+    insight_text = "Counterfactual analysis completed"
+    try:
+        import json
+        import re
+        content = result.content if hasattr(result, 'content') else str(result)
+        json_match = re.search(r'\{.*\}', content, re.DOTALL)
+        if json_match:
+            parsed = json.loads(json_match.group())
+            insight_text = parsed.get("insight", parsed.get("strategic_insight", insight_text))
+    except Exception:
+        pass
+    
     # Create counterfactual replay
     replay = CounterfactualReplay(
         incident_id=state["signal_id"],
@@ -594,13 +674,13 @@ Output JSON with these fields.
         alternative_hypothesis_id=alternative.hypothesis_id,
         alternative_hypothesis_description=alternative.description,
         alternative_action=alternative.recommended_action or "",
-        insight="Counterfactual analysis completed",
+        insight=insight_text,
     )
     
-    # Store in strategic memory
-    strategic_memory.add_replay(replay)
+    # Store in strategic memory (persistent)
+    await strategic_memory.add_replay(replay)
     
-    logger.info("✅ Counterfactual replay completed")
+    logger.info(f"✅ Counterfactual replay completed. Insight: {insight_text[:50]}...")
     
     return {"counterfactual": replay}
 
@@ -628,10 +708,25 @@ async def evolve_policy_node(state: HypothesisMarketState) -> Dict[str, Any]:
     """
     logger.info("📈 Checking policy evolution")
     
-    candidates = strategic_memory.get_policy_update_candidates()
+    candidates = await strategic_memory.get_policy_update_candidates()
+    stats = await strategic_memory.get_stats()
     
     if len(candidates) >= 5:
-        logger.info("🔄 Policy evolution triggered")
+        logger.info(f"🔄 Policy evolution triggered! {len(candidates)} candidates, accuracy: {stats['accuracy_rate']:.1%}")
+        
+        # Broadcast learning event to frontend
+        from app.services.websocket import manager
+        await manager.broadcast({
+            "type": "learning_event",
+            "data": {
+                "event": "policy_evolution_triggered",
+                "candidates": len(candidates),
+                "total_decisions": stats["total_replays"],
+                "accuracy_rate": stats["accuracy_rate"],
+                "timestamp": datetime.now().isoformat()
+            }
+        })
+        
         return {"policy_update_recommended": True}
     
     return {"policy_update_recommended": False}

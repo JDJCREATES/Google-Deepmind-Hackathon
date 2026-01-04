@@ -3,15 +3,24 @@ Counterfactual replay engine for strategic learning.
 
 Analyzes "what if we chose differently" after each decision,
 enabling the system to learn strategically, not just tactically.
+
+Now with SQLite persistence for long-term learning across restarts.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import json
+import os
+from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
+import aiosqlite
+
 from app.hypothesis.models import Hypothesis
+from app.utils.logging import get_agent_logger
+
+logger = get_agent_logger("StrategicMemory")
 
 
 @dataclass
@@ -23,28 +32,6 @@ class CounterfactualReplay:
     second-most-likely hypothesis instead?"
     
     This enables strategic learning beyond simple success/failure.
-    
-    Attributes:
-        replay_id: Unique identifier
-        incident_id: The incident this replay analyzes
-        
-        chosen_hypothesis: The hypothesis we acted on
-        action_taken: The action we executed
-        actual_outcome: What actually happened
-        
-        alternative_hypothesis: The hypothesis we didn't choose
-        alternative_action: What we would have done
-        predicted_alternative_outcome: Gemini's prediction of what would have happened
-        
-        production_delta: Units saved/lost compared to alternative
-        time_delta_minutes: Minutes faster/slower detection
-        risk_delta: Risk avoided/incurred
-        cost_delta: Dollars saved/lost
-        
-        insight: Strategic learning from this analysis
-        should_update_policy: Whether this warrants policy evolution
-        
-        created_at: When replay was performed
     """
     replay_id: str = field(default_factory=lambda: f"CF-{uuid4().hex[:8]}")
     incident_id: str = ""
@@ -62,10 +49,10 @@ class CounterfactualReplay:
     predicted_alternative_outcome: Dict[str, Any] = field(default_factory=dict)
     
     # Delta metrics
-    production_delta: float = 0.0  # Units saved/lost
-    time_delta_minutes: int = 0     # Faster/slower detection
-    risk_delta: float = 0.0         # Risk avoided/incurred
-    cost_delta: float = 0.0         # Dollars saved/lost
+    production_delta: float = 0.0
+    time_delta_minutes: int = 0
+    risk_delta: float = 0.0
+    cost_delta: float = 0.0
     
     # Strategic learning
     insight: str = ""
@@ -78,11 +65,10 @@ class CounterfactualReplay:
     @property
     def was_optimal_choice(self) -> bool:
         """Returns True if chosen path was better than alternative."""
-        # Positive deltas mean our choice was better
         score = (
             self.production_delta * 0.4 +
-            -self.time_delta_minutes * 0.3 +  # Negative time is better
-            -self.risk_delta * 0.2 +          # Negative risk is better
+            -self.time_delta_minutes * 0.3 +
+            -self.risk_delta * 0.2 +
             self.cost_delta * 0.1
         )
         return score >= 0
@@ -107,69 +93,320 @@ class CounterfactualReplay:
             "was_optimal_choice": self.was_optimal_choice,
             "should_update_policy": self.should_update_policy,
             "update_recommendation": self.update_recommendation,
-            "created_at": self.created_at.isoformat(),
+            "created_at": self.created_at.isoformat() if isinstance(self.created_at, datetime) else self.created_at,
         }
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "CounterfactualReplay":
+        """Reconstruct from dictionary (database row)."""
+        # Parse JSON fields
+        if isinstance(data.get("actual_outcome"), str):
+            data["actual_outcome"] = json.loads(data["actual_outcome"]) if data["actual_outcome"] else {}
+        if isinstance(data.get("predicted_alternative_outcome"), str):
+            data["predicted_alternative_outcome"] = json.loads(data["predicted_alternative_outcome"]) if data["predicted_alternative_outcome"] else {}
+        if isinstance(data.get("created_at"), str):
+            data["created_at"] = datetime.fromisoformat(data["created_at"])
+        if isinstance(data.get("should_update_policy"), int):
+            data["should_update_policy"] = bool(data["should_update_policy"])
+            
+        return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 
 
-@dataclass
 class StrategicMemory:
     """
-    Long-term memory for strategic learning.
+    Long-term memory for strategic learning with SQLite persistence.
     
     Stores counterfactual replays and policy evolution history
-    to enable continuous improvement.
+    to enable continuous improvement across application restarts.
     """
-    replays: List[CounterfactualReplay] = field(default_factory=list)
-    policy_updates: List[Dict[str, Any]] = field(default_factory=list)
     
-    def add_replay(self, replay: CounterfactualReplay) -> None:
-        """Add a counterfactual replay to memory."""
-        self.replays.append(replay)
+    def __init__(self, db_path: str = "data/learning.db"):
+        self.db_path = db_path
+        self._table_initialized = False
+        os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
     
-    def get_recent_replays(self, count: int = 20) -> List[CounterfactualReplay]:
-        """Get most recent replays."""
-        return self.replays[-count:]
+    async def _ensure_tables(self, db: aiosqlite.Connection):
+        """Ensure all required tables exist."""
+        if self._table_initialized:
+            return
+            
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS counterfactual_replays (
+                replay_id TEXT PRIMARY KEY,
+                incident_id TEXT,
+                chosen_hypothesis_id TEXT,
+                chosen_hypothesis_description TEXT,
+                action_taken TEXT,
+                actual_outcome TEXT,
+                alternative_hypothesis_id TEXT,
+                alternative_hypothesis_description TEXT,
+                alternative_action TEXT,
+                predicted_alternative_outcome TEXT,
+                production_delta REAL,
+                time_delta_minutes INTEGER,
+                risk_delta REAL,
+                cost_delta REAL,
+                insight TEXT,
+                should_update_policy INTEGER,
+                update_recommendation TEXT,
+                created_at TEXT
+            )
+        """)
+        
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS policy_evolution (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                version TEXT,
+                confidence_threshold_act REAL,
+                confidence_threshold_escalate REAL,
+                framework_weights TEXT,
+                policy_insights TEXT,
+                incidents_evaluated INTEGER,
+                accuracy_rate REAL,
+                created_at TEXT
+            )
+        """)
+        
+        await db.commit()
+        self._table_initialized = True
     
-    def get_suboptimal_decisions(self) -> List[CounterfactualReplay]:
+    async def add_replay(self, replay: CounterfactualReplay) -> None:
+        """Add a counterfactual replay to persistent memory."""
+        async with aiosqlite.connect(self.db_path) as db:
+            await self._ensure_tables(db)
+            
+            await db.execute("""
+                INSERT OR REPLACE INTO counterfactual_replays (
+                    replay_id, incident_id, chosen_hypothesis_id, chosen_hypothesis_description,
+                    action_taken, actual_outcome, alternative_hypothesis_id,
+                    alternative_hypothesis_description, alternative_action,
+                    predicted_alternative_outcome, production_delta, time_delta_minutes,
+                    risk_delta, cost_delta, insight, should_update_policy,
+                    update_recommendation, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                replay.replay_id,
+                replay.incident_id,
+                replay.chosen_hypothesis_id,
+                replay.chosen_hypothesis_description,
+                replay.action_taken,
+                json.dumps(replay.actual_outcome),
+                replay.alternative_hypothesis_id,
+                replay.alternative_hypothesis_description,
+                replay.alternative_action,
+                json.dumps(replay.predicted_alternative_outcome),
+                replay.production_delta,
+                replay.time_delta_minutes,
+                replay.risk_delta,
+                replay.cost_delta,
+                replay.insight,
+                1 if replay.should_update_policy else 0,
+                replay.update_recommendation,
+                replay.created_at.isoformat() if isinstance(replay.created_at, datetime) else replay.created_at,
+            ))
+            await db.commit()
+            
+        logger.info(f"📝 Stored counterfactual replay: {replay.replay_id}")
+    
+    async def get_recent_replays(self, count: int = 20) -> List[CounterfactualReplay]:
+        """Get most recent replays from database."""
+        replays = []
+        async with aiosqlite.connect(self.db_path) as db:
+            await self._ensure_tables(db)
+            db.row_factory = aiosqlite.Row
+            
+            cursor = await db.execute("""
+                SELECT * FROM counterfactual_replays
+                ORDER BY created_at DESC LIMIT ?
+            """, (count,))
+            rows = await cursor.fetchall()
+            
+            for row in rows:
+                replays.append(CounterfactualReplay.from_dict(dict(row)))
+                
+        return list(reversed(replays))  # Chronological order
+    
+    async def get_all_replays(self) -> List[CounterfactualReplay]:
+        """Get all replays for analytics."""
+        replays = []
+        async with aiosqlite.connect(self.db_path) as db:
+            await self._ensure_tables(db)
+            db.row_factory = aiosqlite.Row
+            
+            cursor = await db.execute("""
+                SELECT * FROM counterfactual_replays
+                ORDER BY created_at ASC
+            """)
+            rows = await cursor.fetchall()
+            
+            for row in rows:
+                replays.append(CounterfactualReplay.from_dict(dict(row)))
+                
+        return replays
+    
+    async def get_suboptimal_decisions(self) -> List[CounterfactualReplay]:
         """Get replays where we made a suboptimal choice."""
-        return [r for r in self.replays if not r.was_optimal_choice]
+        all_replays = await self.get_all_replays()
+        return [r for r in all_replays if not r.was_optimal_choice]
     
-    def get_policy_update_candidates(self) -> List[CounterfactualReplay]:
+    async def get_policy_update_candidates(self) -> List[CounterfactualReplay]:
         """Get replays that recommend policy updates."""
-        return [r for r in self.replays if r.should_update_policy]
+        replays = []
+        async with aiosqlite.connect(self.db_path) as db:
+            await self._ensure_tables(db)
+            db.row_factory = aiosqlite.Row
+            
+            cursor = await db.execute("""
+                SELECT * FROM counterfactual_replays
+                WHERE should_update_policy = 1
+                ORDER BY created_at DESC
+            """)
+            rows = await cursor.fetchall()
+            
+            for row in rows:
+                replays.append(CounterfactualReplay.from_dict(dict(row)))
+                
+        return replays
     
-    def get_insights_for_prompt(self, max_insights: int = 5) -> str:
+    async def get_insights_for_prompt(self, max_insights: int = 5) -> str:
         """
         Get formatted insights for injecting into Gemini prompts.
         
         Returns recent strategic insights to inform future decisions.
         """
-        recent_with_insights = [
-            r for r in self.replays[-50:]
-            if r.insight
-        ][-max_insights:]
+        replays = await self.get_recent_replays(50)
+        recent_with_insights = [r for r in replays if r.insight][-max_insights:]
         
         if not recent_with_insights:
             return ""
         
-        insights = "\n".join([
-            f"- {r.insight}" for r in recent_with_insights
-        ])
+        insights = "\n".join([f"- {r.insight}" for r in recent_with_insights])
         
         return f"""
-STRATEGIC INSIGHTS FROM RECENT DECISIONS:
+STRATEGIC INSIGHTS FROM PAST DECISIONS:
 {insights}
+
+Use these learnings to inform your current analysis.
 """
     
-    def get_stats(self) -> Dict[str, Any]:
+    def get_insights_for_prompt_sync(self, max_insights: int = 5) -> str:
+        """Synchronous version for use in sync contexts."""
+        import sqlite3
+        
+        if not os.path.exists(self.db_path):
+            return ""
+            
+        try:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            cursor = conn.execute("""
+                SELECT insight FROM counterfactual_replays
+                WHERE insight IS NOT NULL AND insight != ''
+                ORDER BY created_at DESC LIMIT ?
+            """, (max_insights,))
+            rows = cursor.fetchall()
+            conn.close()
+            
+            if not rows:
+                return ""
+                
+            insights = "\n".join([f"- {row['insight']}" for row in reversed(rows)])
+            
+            return f"""
+STRATEGIC INSIGHTS FROM PAST DECISIONS:
+{insights}
+
+Use these learnings to inform your current analysis.
+"""
+        except Exception as e:
+            logger.debug(f"Could not load insights: {e}")
+            return ""
+    
+    async def get_stats(self) -> Dict[str, Any]:
         """Get memory statistics."""
-        total = len(self.replays)
-        optimal = sum(1 for r in self.replays if r.was_optimal_choice)
+        replays = await self.get_all_replays()
+        total = len(replays)
+        optimal = sum(1 for r in replays if r.was_optimal_choice)
+        policy_candidates = await self.get_policy_update_candidates()
         
         return {
             "total_replays": total,
             "optimal_decisions": optimal,
             "suboptimal_decisions": total - optimal,
             "accuracy_rate": optimal / total if total > 0 else 0.0,
-            "policy_updates_recommended": len(self.get_policy_update_candidates()),
+            "policy_updates_recommended": len(policy_candidates),
         }
+    
+    async def save_policy_evolution(
+        self,
+        version: str,
+        confidence_threshold_act: float,
+        confidence_threshold_escalate: float,
+        framework_weights: Dict[str, float],
+        policy_insights: List[str],
+        incidents_evaluated: int,
+        accuracy_rate: float
+    ) -> None:
+        """Save a policy evolution record."""
+        async with aiosqlite.connect(self.db_path) as db:
+            await self._ensure_tables(db)
+            
+            await db.execute("""
+                INSERT INTO policy_evolution (
+                    version, confidence_threshold_act, confidence_threshold_escalate,
+                    framework_weights, policy_insights, incidents_evaluated,
+                    accuracy_rate, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                version,
+                confidence_threshold_act,
+                confidence_threshold_escalate,
+                json.dumps(framework_weights),
+                json.dumps(policy_insights),
+                incidents_evaluated,
+                accuracy_rate,
+                datetime.now().isoformat(),
+            ))
+            await db.commit()
+            
+        logger.info(f"📊 Saved policy evolution: {version}")
+    
+    async def get_policy_history(self) -> List[Dict[str, Any]]:
+        """Get all policy evolution records for analytics."""
+        records = []
+        async with aiosqlite.connect(self.db_path) as db:
+            await self._ensure_tables(db)
+            db.row_factory = aiosqlite.Row
+            
+            cursor = await db.execute("""
+                SELECT * FROM policy_evolution ORDER BY created_at ASC
+            """)
+            rows = await cursor.fetchall()
+            
+            for row in rows:
+                record = dict(row)
+                record["framework_weights"] = json.loads(record["framework_weights"]) if record["framework_weights"] else {}
+                record["policy_insights"] = json.loads(record["policy_insights"]) if record["policy_insights"] else []
+                records.append(record)
+                
+        return records
+    
+    async def get_all_insights(self) -> List[Dict[str, Any]]:
+        """Get all insights with metadata for frontend display."""
+        replays = await self.get_all_replays()
+        insights = []
+        
+        for r in replays:
+            if r.insight:
+                insights.append({
+                    "insight": r.insight,
+                    "incident_id": r.incident_id,
+                    "was_optimal": r.was_optimal_choice,
+                    "created_at": r.created_at.isoformat() if isinstance(r.created_at, datetime) else r.created_at,
+                })
+                
+        return insights
+
+
+# Global singleton instance
+strategic_memory = StrategicMemory()

@@ -12,6 +12,7 @@ from typing import Annotated, Any, Dict, List, Optional, TypedDict
 
 from app.hypothesis import BeliefState, Hypothesis
 from app.reasoning import CounterfactualReplay, DecisionPolicy, DriftAlert
+from langgraph.graph.message import add_messages
 
 
 def merge_hypotheses(left: List, right: List) -> List:
@@ -94,7 +95,10 @@ class HypothesisMarketState(TypedDict, total=False):
     needs_human: bool
     
     # Messages (for agent communication)
-    messages: List[Any]
+    messages: Annotated[List[Any], add_messages]
+    
+    # Gemini 3 Thought Signature (Chain of Thought continuity)
+    thought_signature: Optional[str]
 
 
 def create_initial_state(
@@ -136,4 +140,5 @@ def create_initial_state(
         converged=False,
         needs_human=False,
         messages=[],
+        thought_signature=None,
     )

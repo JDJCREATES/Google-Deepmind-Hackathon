@@ -11,7 +11,7 @@ This module provides the foundation for all specialized agents with:
 """
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional, Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 import asyncio
 from dataclasses import dataclass
 
@@ -141,6 +141,37 @@ class BaseAgent(ABC):
         # Ensure directory exists
         os.makedirs(os.path.dirname(self._checkpoint_path) or ".", exist_ok=True)
         
+        # Explicit Context Caching (Gemini 3)
+        cache_name = None
+        try:
+            import google.generativeai as genai
+            from google.generativeai import caching
+            
+            # Simple cache key based on agent name
+            # In production, hash the content to detect changes
+            display_name = f"{self.agent_name}_v1"
+            
+            # Check for existing cache (naïve approach for demo)
+            # For a persistent running service, we'd check existence more robustly
+            # or just create with a unique name per version.
+            
+            # Create cached content
+            # We cache the system prompt to reduce startup tokens/latency
+            cached_sys_prompt = caching.CachedContent.create(
+                model=self.llm.model,
+                display_name=display_name,
+                system_instruction=self._system_prompt,
+                contents=[], # No history yet
+                ttl=datetime.timedelta(minutes=60), # Keep alive for 60 mins
+            )
+            cache_name = cached_sys_prompt.name
+            self.logger.debug(f"💾 {self.agent_name} Context Cached: {cache_name}")
+            
+        except ImportError:
+            self.logger.warning("google-generativeai not installed, skipping explicit caching")
+        except Exception as e:
+            self.logger.debug(f"Caching skipped/failed (normal for first run or unsupported region): {e}")
+
         try:
             # Create persistent aiosqlite connection
             self._db_conn = await aiosqlite.connect(self._checkpoint_path)
@@ -155,11 +186,22 @@ class BaseAgent(ABC):
             # Initialize the checkpointer's tables
             await self._checkpointer.setup()
             
+            # Re-initialize LLM with cache if available
+            llm_to_use = self._llm
+            if cache_name:
+                # Re-instantiate with cache
+                llm_to_use = ChatGoogleGenerativeAI(
+                    model="gemini-1.5-pro-002", # Gemini 3 preview map
+                    google_api_key=settings.google_api_key,
+                    temperature=0.7,
+                    cached_content=cache_name, 
+                )
+            
             # Compile the agent with the checkpointer
             self._agent = create_react_agent(
-                self._llm,
+                llm_to_use,
                 tools=self._tools,
-                prompt=self._system_prompt,
+                prompt=self._system_prompt if not cache_name else "System prompt cached.", # Avoid dupe if cached
                 checkpointer=self._checkpointer,
             )
             
@@ -780,9 +822,13 @@ class BaseAgent(ABC):
     # ========== HELPER METHODS ==========
     
     def _build_reasoning_prompt(self, context: Dict[str, Any]) -> str:
-        """Build prompt for reasoning phase."""
+        """Build prompt for reasoning phase, including strategic insights from past decisions."""
+        # Get strategic insights from persistent memory
+        from app.reasoning.counterfactual import strategic_memory
+        insights = strategic_memory.get_insights_for_prompt_sync()
+        
         return f"""Analyze the current situation and propose actions.
-
+{insights}
 CONTEXT:
 {self._format_context(context)}
 
@@ -792,6 +838,7 @@ INSTRUCTIONS:
 3. Propose specific actions to take
 4. Assess your confidence in these actions
 5. Determine if escalation to Master Orchestrator is needed
+6. Consider the strategic insights from past decisions if available
 
 Provide your reasoning and proposed actions clearly.
 """

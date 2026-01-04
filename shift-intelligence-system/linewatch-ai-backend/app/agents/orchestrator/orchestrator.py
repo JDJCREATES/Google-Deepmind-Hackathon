@@ -135,9 +135,13 @@ class MasterOrchestrator(BaseAgent):
             for e in evidence_list
         ]) if evidence_list else "No evidence gathered yet"
         
+        # Get strategic insights from persistent memory
+        from app.reasoning.counterfactual import strategic_memory
+        insights = strategic_memory.get_insights_for_prompt_sync()
+        
         prompt = f"""
         You are the Master Orchestrator and Final Judge.
-        
+        {insights}
         SITUATION: {belief_state.signal_description}
         
         LEADING HYPOTHESIS (Math confidence: {confidence:.2f}):
@@ -148,9 +152,10 @@ class MasterOrchestrator(BaseAgent):
         
         DECISION TASK:
         1. Review the evidence critically.
-        2. Decide if the leading hypothesis is truly proven.
-        3. Select the best course of action (can be different from hypothesis recommendation).
-        4. If confidence is too low (<0.7), mandate "GATHER MORE EVIDENCE" or "ESCALATE TO HUMAN".
+        2. Consider the strategic insights from past decisions.
+        3. Decide if the leading hypothesis is truly proven.
+        4. Select the best course of action (can be different from hypothesis recommendation).
+        5. If confidence is too low (<0.7), mandate "GATHER MORE EVIDENCE" or "ESCALATE TO HUMAN".
         
         Output your binding verdict and reasoning.
         """

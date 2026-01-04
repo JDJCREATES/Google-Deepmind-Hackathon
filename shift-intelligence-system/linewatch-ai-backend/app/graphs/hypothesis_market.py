@@ -211,12 +211,15 @@ async def run_hypothesis_market(
     signal_type: str,
     signal_description: str,
     signal_data: dict,
-    thread_id: str = "default",
+    thread_id: str = None,
 ) -> dict:
     """
     Run a complete hypothesis market cycle.
     """
-    logger.info(f"🚀 Running hypothesis market for signal: {signal_id}")
+    if thread_id is None:
+        thread_id = f"signal_{signal_id}"
+
+    logger.info(f"🚀 Running hypothesis market for signal: {signal_id} (Thread: {thread_id})")
     
     # Create initial state
     initial_state = create_initial_state(
