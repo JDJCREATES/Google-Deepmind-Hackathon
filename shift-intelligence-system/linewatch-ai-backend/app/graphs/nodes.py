@@ -21,6 +21,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.messages import HumanMessage
 
 from app.config import settings
 from app.hypothesis import (
@@ -154,8 +155,20 @@ Select at least 2 relevant frameworks.
         # Raw invoke to get message with potential thought signature
         msg = await llm.ainvoke(messages)
         
+        # Extract text content - Gemini may return list format
+        content_text = msg.content
+        if isinstance(content_text, list):
+            # Extract text from list of content parts
+            text_parts = []
+            for part in content_text:
+                if isinstance(part, dict) and 'text' in part:
+                    text_parts.append(part['text'])
+                elif isinstance(part, str):
+                    text_parts.append(part)
+            content_text = "".join(text_parts)
+        
         # 1. Parse content
-        result = parser.parse(msg.content)
+        result = parser.parse(content_text)
         frameworks = result.frameworks
         reasoning = result.reasoning
         
@@ -171,15 +184,11 @@ Select at least 2 relevant frameworks.
              
         if new_sig:
             logger.debug("Captured thought signature from classify_frameworks")
-
-        logger.info(f"✅ Classified frameworks: {frameworks} ({reasoning})")
         
     except Exception as e:
         logger.error(f"Failed to classify frameworks: {e}")
         frameworks = ["RCA", "TOC"]  # Fallback
-        new_sig = state.get("thought_signature") # Preserve old if failed
-    
-    logger.info(f"✅ Applicable frameworks: {frameworks}")
+        new_sig = state.get("thought_signature")  # Preserve old if failed
     
     # Store in signal_data for downstream use
     updated_data = dict(state.get("signal_data", {}))

@@ -520,9 +520,14 @@ class BaseAgent(ABC):
                 "parts": [{"thought_signature": self.latest_thought_signature}]
             })
         
-        # Invoke Gemini 3 with thinking enabled
+        # Stream Gemini 3's thinking in real-time
         await self._ensure_agent_initialized()
-        result = await self.agent.ainvoke(
+        
+        # Use astream to get streaming thoughts
+        thoughts_buffer = []
+        final_result = None
+        
+        async for chunk in self.agent.astream(
             {"messages": messages},
             config={
                 "configurable": {
@@ -530,7 +535,28 @@ class BaseAgent(ABC):
                     "thinking_level": self.thinking_level,
                 }
             }
-        )
+        ):
+            # Extract thinking from chunk
+            if "messages" in chunk:
+                for msg in chunk["messages"]:
+                    # Check for thinking content
+                    if hasattr(msg, 'content'):
+                        content = msg.content
+                        # Broadcast thinking as it streams
+                        if isinstance(content, str) and len(content) > 10:
+                            await self._broadcast_thought(content[:200])
+                            thoughts_buffer.append(content)
+                    
+                    # Check for explicit thinking attribute (Gemini 3)
+                    if hasattr(msg, 'thinking') and msg.thinking:
+                        await self._broadcast_thought(msg.thinking[:200])
+                        thoughts_buffer.append(msg.thinking)
+            
+            # Store final result
+            final_result = chunk
+        
+        # Use the final chunk as result
+        result = final_result if final_result else {"messages": messages}
         
         # Track token usage
         await self._track_tokens(result)
@@ -538,16 +564,12 @@ class BaseAgent(ABC):
         # Extract and store thought signature
         await self._extract_thought_signature(result)
         
-        # Extract Gemini 3's thoughts and reasoning
-        thoughts = self._extract_thoughts(result)
+        # Extract proposed actions and confidence from final result
+        thoughts = " ".join(thoughts_buffer) if thoughts_buffer else "No explicit reasoning trace available"
         proposed_actions = self._extract_proposed_actions(result)
         confidence = self._calculate_confidence(result)
         
         await self._broadcast_thought(f"Reasoning complete. Confidence: {confidence:.2f}")
-        # Broadcast thoughts without "Thoughts:" prefix
-        if thoughts and thoughts != "No explicit reasoning trace available":
-             await self._broadcast_thought(thoughts[:200]) # Increased length
-        else:
              await self._broadcast_thought(f"Plan: {len(proposed_actions)} actions proposed")
 
         # Determine if escalation needed

@@ -540,11 +540,13 @@ class SimulationService:
     def _calculate_metrics(self, tick_seconds: float):
         """Calculate OEE and Safety Score."""
         # 1. Availability (Are machines operational?)
-        total_lines = len(self.machines)
+        lines = self.layout.get("lines", [])
+        total_lines = len(lines)
         if total_lines == 0:
             return
             
-        operational_lines = sum(1 for m in self.machines.values() if m["status"] == "operational")
+        # Count operational lines based on health
+        operational_lines = sum(1 for line in lines if self.line_health.get(line["id"], 0) > 20)
         current_availability = operational_lines / total_lines
         
         # Simple rolling average for smoothness
@@ -555,7 +557,8 @@ class SimulationService:
         # For simulation, we assume operational lines run at 100% speed unless health degraded
         # Simplified: Performance = Average Health of Operational Lines / 100
         if operational_lines > 0:
-            avg_health = sum(self.line_health[m["id"]] for m in self.machines.values() if m["status"] == "operational") / operational_lines
+            operational_line_ids = [line["id"] for line in lines if self.line_health.get(line["id"], 0) > 20]
+            avg_health = sum(self.line_health.get(lid, 0) for lid in operational_line_ids) / operational_lines
             current_performance = avg_health / 100.0
         else:
             current_performance = 0.0
@@ -768,7 +771,12 @@ class SimulationService:
         if random.random() < (settings.event_probability_safety_violation / 10):
             events.append(self._trigger_safety_violation())
         
-        # 9. BROADCAST ALL OPERATOR DATA (for UI - fatigue bars, stats, etc)
+        # 9. PROCESS ECONOMY (wages, sales)
+        self._process_finances(self.tick_rate)
+        self._process_market_sales()
+        self._calculate_metrics(self.tick_rate)  # Calculate OEE and safety scores
+        
+        # 10. BROADCAST ALL OPERATOR DATA (for UI - fatigue bars, stats, etc)
         # This is SEPARATE from fog-of-war visibility
         all_operators_data = {}
         for op in self.operators:

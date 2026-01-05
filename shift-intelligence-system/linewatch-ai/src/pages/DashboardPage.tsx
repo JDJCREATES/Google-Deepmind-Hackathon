@@ -37,46 +37,49 @@ export default function DashboardPage() {
 
   return (
     <div className="h-screen w-screen bg-stone-950 flex flex-col text-stone-200 font-sans overflow-hidden">
-      {/* HEADER */}
-      <header className="h-12 bg-stone-900 border-b border-stone-800 flex items-center justify-between px-4 shrink-0">
-        <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded bg-amber-600 flex items-center justify-center text-white">
-                <FaIndustry />
-            </div>
-            <div>
-                <h1 className="font-bold text-base leading-tight tracking-tight text-stone-100">LINEWATCH AI</h1>
-                <p className="text-[9px] text-stone-500 font-mono tracking-wider">EPISTEMIC REASONING • GEMINI-3</p>
+      {/* HEADER - Fully Responsive */}
+      <header className="min-h-12 bg-stone-900 border-b border-stone-800 flex flex-col md:flex-row items-stretch md:items-center justify-between px-2 md:px-4 py-2 md:py-0 gap-2 md:gap-0 shrink-0">
+        {/* Top Row: Branding + Status */}
+        <div className="flex items-center justify-between md:justify-start gap-2 md:gap-3">
+            <div className="flex items-center gap-2 md:gap-3">
+                <div className="w-6 h-6 md:w-8 md:h-8 rounded bg-amber-600 flex items-center justify-center text-white text-xs md:text-base">
+                    <FaIndustry />
+                </div>
+                <div>
+                    <h1 className="font-bold text-sm md:text-base leading-tight tracking-tight text-stone-100">LINEWATCH AI</h1>
+                    <p className="text-[8px] md:text-[9px] text-stone-500 font-mono tracking-wider">EPISTEMIC REASONING • GEMINI-3</p>
+                </div>
             </div>
             
-            <div className="h-6 w-px bg-stone-700 mx-3" />
-            
-            <StatusBadge 
-                label={isConnected ? "CONNECTED" : "OFFLINE"} 
-                type={isConnected ? "success" : "error"} 
-            />
-            <StatusBadge 
-                label={simStatus?.running ? `ACTIVE ${simStatus.uptime}m` : "PAUSED"} 
-                type={simStatus?.running ? "success" : "warning"} 
-            />
+            <div className="flex items-center gap-2">
+                <StatusBadge 
+                    label={isConnected ? "CONN" : "OFF"} 
+                    type={isConnected ? "success" : "error"} 
+                />
+                <StatusBadge 
+                    label={simStatus?.running ? `RUN ${simStatus.uptime}m` : "PAUSE"} 
+                    type={simStatus?.running ? "success" : "warning"} 
+                />
+            </div>
         </div>
 
-      {/* Financial Tracker (Responsive) */}
-      <div className="flex items-center gap-2 md:gap-4 lg:gap-8 mx-2 md:mx-4 overflow-x-auto no-scrollbar">
+      {/* Financial Tracker - Responsive Grid */}
+      <div className="flex items-center gap-2 md:gap-4 lg:gap-6 overflow-x-auto no-scrollbar">
         
         {/* KPIs (OEE & Safety) */}
-        <div className="flex gap-3 md:gap-6 mr-3 md:mr-6 pr-3 md:pr-6 border-r border-stone-800/50 shrink-0">
-            <div className="flex flex-col items-end md:items-center">
-                <span className="text-[10px] text-stone-500 font-mono tracking-wider">OEE</span>
-                <span className={`font-mono font-bold text-sm md:text-lg leading-none tabular-nums ${
+        <div className="flex gap-2 md:gap-4 pr-2 md:pr-4 border-r border-stone-800/50 shrink-0">
+            <div className="flex flex-col items-center">
+                <span className="text-[8px] md:text-[10px] text-stone-500 font-mono tracking-wider">OEE</span>
+                <span className={`font-mono font-bold text-xs md:text-sm lg:text-lg leading-none tabular-nums ${
                     kpi.oee >= 0.85 ? 'text-emerald-400' : kpi.oee >= 0.60 ? 'text-amber-400' : 'text-rose-400'
                 }`}>
                     {(kpi.oee * 100).toFixed(0)}%
                 </span>
             </div>
             
-            <div className="flex flex-col items-end md:items-center">
-                <span className="text-[10px] text-stone-500 font-mono tracking-wider">SAFETY</span>
-                <span className={`font-mono font-bold text-sm md:text-lg leading-none tabular-nums ${
+            <div className="flex flex-col items-center">
+                <span className="text-[8px] md:text-[10px] text-stone-500 font-mono tracking-wider">SAFE</span>
+                <span className={`font-mono font-bold text-xs md:text-sm lg:text-lg leading-none tabular-nums ${
                     kpi.safety_score >= 98 ? 'text-emerald-400' : 'text-rose-400'
                 }`}>
                     {kpi.safety_score.toFixed(0)}%
@@ -85,60 +88,57 @@ export default function DashboardPage() {
         </div>
 
         {/* Balance */}
-        <div className="flex flex-col items-end md:items-center shrink-0">
-            <span className="hidden md:block text-[10px] text-stone-500 font-mono tracking-wider uppercase">Bank Balance</span>
-            <span className="md:hidden text-[8px] text-stone-500 font-mono tracking-wider uppercase">Bal</span>
-            <span className={`font-mono font-bold text-sm md:text-lg leading-none ${financials.balance < 0 ? 'text-red-500' : 'text-emerald-400'}`}>
-                ${financials.balance.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 0})}
+        <div className="flex flex-col items-center shrink-0">
+            <span className="text-[8px] md:text-[10px] text-stone-500 font-mono tracking-wider uppercase">Balance</span>
+            <span className={`font-mono font-bold text-xs md:text-sm lg:text-lg leading-none ${financials.balance < 0 ? 'text-red-500' : 'text-emerald-400'}`}>
+                ${(financials.balance / 1000).toFixed(0)}k
             </span>
         </div>
 
-        {/* Detailed Stats Block */}
-        <div className="flex items-center gap-3 md:gap-6 bg-stone-900/40 py-1 px-2 md:px-3 rounded border border-stone-800/30 shrink-0">
+        {/* Detailed Stats Block - Hidden on mobile */}
+        <div className="hidden md:flex items-center gap-2 lg:gap-4 bg-stone-900/40 py-1 px-2 lg:px-3 rounded border border-stone-800/30 shrink-0">
             {/* Revenue */}
             <div className="flex flex-col">
-                <span className="hidden md:block text-[9px] text-stone-600 font-mono uppercase">Revenue</span>
-                <span className="md:hidden text-[8px] text-stone-600 font-mono uppercase">Rev</span>
-                <span className="text-stone-400 font-mono text-[10px] md:text-xs">
-                    +${financials.total_revenue.toLocaleString(undefined, {maximumFractionDigits: 0})}
+                <span className="text-[8px] lg:text-[9px] text-stone-600 font-mono uppercase">Rev</span>
+                <span className="text-stone-400 font-mono text-[10px] lg:text-xs">
+                    +${(financials.total_revenue / 1000).toFixed(0)}k
                 </span>
             </div>
             
-            <div className="h-4 md:h-5 w-px bg-stone-800"></div>
+            <div className="h-4 lg:h-5 w-px bg-stone-800"></div>
 
             {/* Expenses */}
             <div className="flex flex-col">
-                <span className="hidden md:block text-[9px] text-stone-600 font-mono uppercase">Expenses</span>
-                <span className="md:hidden text-[8px] text-stone-600 font-mono uppercase">Exp</span>
-                <span className="text-stone-400 font-mono text-[10px] md:text-xs">
-                    -${financials.total_expenses.toLocaleString(undefined, {maximumFractionDigits: 0})}
+                <span className="text-[8px] lg:text-[9px] text-stone-600 font-mono uppercase">Exp</span>
+                <span className="text-stone-400 font-mono text-[10px] lg:text-xs">
+                    -${(financials.total_expenses / 1000).toFixed(0)}k
                 </span>
             </div>
             
-            <div className="h-4 md:h-5 w-px bg-stone-800"></div>
+            <div className="h-4 lg:h-5 w-px bg-stone-800"></div>
 
             {/* Burn Rate */}
             <div className="flex flex-col">
-                <span className="hidden md:block text-[9px] text-stone-600 font-mono uppercase">Burn Rate</span>
-                <span className="md:hidden text-[8px] text-stone-600 font-mono uppercase">Burn</span>
-                <span className="text-orange-900/80 font-mono text-[10px] md:text-xs">
+                <span className="text-[8px] lg:text-[9px] text-stone-600 font-mono uppercase">Burn</span>
+                <span className="text-orange-900/80 font-mono text-[10px] lg:text-xs">
                     -${financials.hourly_wage_cost.toFixed(0)}/h
                 </span>
             </div>
         </div>
       </div>
 
-        <div className="flex items-center gap-2">
+        {/* Action Buttons - Responsive */}
+        <div className="flex items-center gap-1 md:gap-2">
             <ActionButton 
                 onClick={() => window.open('/analytics', '_blank')}
                 icon={<FaChartLine />} 
-                label="ANALYTICS" 
+                label={<span className="hidden md:inline">ANALYTICS</span>}
                 variant="default"
             />
             <ActionButton 
                 onClick={() => api.simulation.injectEvent("fire")}
                 icon={<FaBolt />} 
-                label="INJECT FAULT" 
+                label={<span className="hidden md:inline">INJECT</span>}
                 variant="danger"
             />
             <ActionButton 
@@ -150,32 +150,60 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      {/* MAIN GRID: Top Row = Floor + Activity Log, Bottom Row = Reasoning Graph */}
-      <main className="flex-1 flex flex-col p-3 gap-3 min-h-0">
+      {/* MAIN GRID - Responsive Layout */}
+      <main className="flex-1 flex flex-col p-2 md:p-3 gap-2 md:gap-3 min-h-0 overflow-hidden">
         
-        {/* TOP ROW: Floor Map + Activity Log */}
-        <div className="flex gap-3 flex-1 min-h-0">
-          
-          {/* FLOOR MAP - Priority: always fully visible */}
-          <div className="flex flex-col shrink-0" style={{ width: '75%' }}>
-            <div className="bg-stone-900 border border-stone-800 rounded-t-md px-3 py-1.5 flex items-center gap-2">
+        {/* MOBILE/TABLET: Stack everything vertically */}
+        <div className="flex lg:hidden flex-col gap-2 md:gap-3 flex-1 min-h-0">
+          {/* Floor Map */}
+          <div className="flex flex-col flex-1 min-h-0">
+            <div className="bg-stone-900 border border-stone-800 rounded-t-md px-2 md:px-3 py-1 md:py-1.5 flex items-center gap-2">
                 <FaIndustry className="text-amber-500 text-xs" />
                 <h2 className="font-semibold text-stone-300 text-xs tracking-wide">PRODUCTION FLOOR</h2>
             </div>
-            <div className="flex-1 rounded-b-md overflow-hidden bg-stone-900 border-x border-b border-stone-800">
+            <div className="flex-1 rounded-b-md overflow-hidden bg-stone-900 border-x border-b border-stone-800 min-h-0">
                 <FloorMap />
             </div>
           </div>
 
-          {/* ACTIVITY LOG - Right side */}
-          <div className="flex-1 min-w-[280px] flex flex-col min-h-0">
+          {/* Activity Log */}
+          <div className="h-[250px] flex flex-col min-h-0">
             <AgentActivityLog />
+          </div>
+
+          {/* Reasoning Graph - Hidden on mobile, shown on tablet */}
+          <div className="hidden md:block h-[200px] shrink-0 overflow-hidden bg-stone-950 border border-stone-800 rounded-md">
+              <HierarchicalAgentGraph />
           </div>
         </div>
 
-        {/* BOTTOM ROW: Agent Reasoning Graph */}
-        <div className="h-[400px] shrink-0 overflow-hidden bg-stone-950 border border-stone-800 rounded-md">
-            <HierarchicalAgentGraph />
+        {/* DESKTOP: Original layout - Top row (floor + activity), bottom row (graph) */}
+        <div className="hidden lg:flex flex-col gap-3 flex-1 min-h-0">
+          
+          {/* TOP ROW: Floor Map + Activity Log side-by-side */}
+          <div className="flex gap-3 flex-1 min-h-0">
+            
+            {/* FLOOR MAP - 75% width */}
+            <div className="flex flex-col" style={{ width: '75%' }}>
+              <div className="bg-stone-900 border border-stone-800 rounded-t-md px-3 py-1.5 flex items-center gap-2">
+                  <FaIndustry className="text-amber-500 text-xs" />
+                  <h2 className="font-semibold text-stone-300 text-xs tracking-wide">PRODUCTION FLOOR</h2>
+              </div>
+              <div className="flex-1 rounded-b-md overflow-hidden bg-stone-900 border-x border-b border-stone-800 min-h-0">
+                  <FloorMap />
+              </div>
+            </div>
+
+            {/* ACTIVITY LOG - 25% width */}
+            <div className="flex-1 flex flex-col min-h-0">
+              <AgentActivityLog />
+            </div>
+          </div>
+
+          {/* BOTTOM ROW: Reasoning Graph */}
+          <div className="h-[400px] shrink-0 overflow-hidden bg-stone-950 border border-stone-800 rounded-md">
+              <HierarchicalAgentGraph />
+          </div>
         </div>
       </main>
     </div>
@@ -202,13 +230,13 @@ const StatusBadge = ({ label, type }: { label: string, type: 'success'|'warning'
     );
 };
 
-// Action button component
+// Action button component - Responsive
 const ActionButton = ({ label, icon, onClick, variant = 'default' }: any) => {
     return (
         <button 
             onClick={onClick}
             className={clsx(
-                "flex items-center gap-1.5 px-3 py-1 rounded text-xs font-semibold transition-all active:scale-95",
+                "flex items-center gap-1 md:gap-1.5 px-2 md:px-3 py-1 md:py-1.5 rounded text-[10px] md:text-xs font-semibold transition-all active:scale-95",
                 variant === 'primary' && "bg-amber-600 text-white hover:bg-amber-500",
                 variant === 'danger' && "bg-transparent text-red-400 border border-red-800 hover:bg-red-950",
                 variant === 'default' && "bg-stone-800 text-stone-300 border border-stone-700 hover:bg-stone-700",
