@@ -284,7 +284,7 @@ class BaseAgent(ABC):
                         clean_msg = "Checking context..."
                         
                     await manager.broadcast({
-                        "type": "agent_thinking",
+                        "type": message_type,  # Use parameter instead of hardcoding
                         "data": {
                             "agent": self.agent_name.replace("Agent", "").lower(),
                             "thought": clean_msg,
@@ -544,17 +544,18 @@ class BaseAgent(ABC):
         # Broadcast only meaningful content - actual thoughts
         if thoughts and thoughts != "No explicit reasoning trace available":
             await self._broadcast_thought(thoughts[:300])  # Actual LLM reasoning
-        elif proposed_actions:
-            # If no thoughts but we have actions, show what we're doing
-            actions_summary = ", ".join(proposed_actions[:2])
-            await self._broadcast_thought(f"Decided: {actions_summary}")
+        
+        # Broadcast what actions we're taking
+        if proposed_actions:
+            actions_summary = ", ".join(proposed_actions[:3])
+            await self._broadcast_thought(f"📋 Taking action: {actions_summary}", "agent_activity")
 
         # Determine if escalation needed
         should_escalate = confidence < 0.7 or self._detect_critical_situation(context)
         escalation_reason = None
         if should_escalate:
             escalation_reason = self._build_escalation_reason(context, thoughts)
-            await self._broadcast_thought(f"Escalating: {escalation_reason}", "system_alert")
+            await self._broadcast_thought(f"⚠️ Escalating: {escalation_reason}", "agent_activity")
         
         # Determine if verification needed
         requires_verification = self._needs_verification(proposed_actions)

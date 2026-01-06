@@ -580,10 +580,10 @@ export const useStore = create<State>()(
                     return;
                 }
                 
-                // Deduplicate Agent Thoughts
+                // Deduplicate Agent Thoughts and Activities
                 let description = message.data?.thought || JSON.stringify(message.data);
                 
-                if (message.type === 'agent_thought' || message.type === 'agent_thinking') {
+                if (message.type === 'agent_thought' || message.type === 'agent_thinking' || message.type === 'agent_activity') {
                     const now = Date.now();
                     // Create a simple hash of the thought content
                     const thoughtHash = description.split('').reduce((a: number, b: string) => { a = ((a << 5) - a) + b.charCodeAt(0); return a & a }, 0);
