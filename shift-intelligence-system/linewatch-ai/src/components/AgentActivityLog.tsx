@@ -108,12 +108,24 @@ const AgentActivityLog: React.FC = () => {
                                 >
                                     {/* Agent & Time */}
                                     <div className="flex items-center justify-between mb-1">
-                                        <span 
-                                            className="text-xs font-bold uppercase tracking-wide"
-                                            style={{ color: agentColor }}
-                                        >
-                                            {entry.source || 'System'}
-                                        </span>
+                                        <div className="flex items-center gap-2">
+                                            <span 
+                                                className="text-xs font-bold uppercase tracking-wide"
+                                                style={{ color: agentColor }}
+                                            >
+                                                {entry.source || 'System'}
+                                            </span>
+                                            {entry.type === 'agent_thinking' && (
+                                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-950/50 text-purple-300 border border-purple-800/50">
+                                                    💭 THINKING
+                                                </span>
+                                            )}
+                                            {entry.type === 'agent_activity' && (
+                                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-950/50 text-cyan-300 border border-cyan-800/50">
+                                                    ⚡ ACTION
+                                                </span>
+                                            )}
+                                        </div>
                                         <span className="text-[10px] text-stone-500 font-mono">
                                             {timestamp}
                                         </span>

@@ -324,9 +324,28 @@ export const useStore = create<State>()(
                 if (message.type === 'log_history') {
                     const historicalLogs = message.data.logs || [];
                     set(state => {
-                        // Merge historical logs with any existing logs, avoiding duplicates
+                        // Transform backend format {id, type, data, timestamp} to frontend format
+                        const transformedLogs = historicalLogs.map((backendLog: any) => {
+                            // Extract source from data.agent or data.source
+                            const source = backendLog.data?.agent || backendLog.data?.source || 'System';
+                            
+                            // Extract description from data.thought or stringify data
+                            let description = backendLog.data?.thought || JSON.stringify(backendLog.data);
+                            
+                            // Return properly formatted LogEntry
+                            return {
+                                id: backendLog.id,
+                                type: backendLog.type,
+                                source: source,
+                                description: description,
+                                timestamp: backendLog.timestamp,
+                                data: backendLog.data
+                            } as LogEntry;
+                        });
+                        
+                        // Merge with existing logs, avoiding duplicates
                         const existingIds = new Set(state.logs.map(l => l.id));
-                        const newLogs = historicalLogs.filter((l: LogEntry) => !existingIds.has(l.id));
+                        const newLogs = transformedLogs.filter((l: LogEntry) => !existingIds.has(l.id));
                         return {
                             logs: [...newLogs.reverse(), ...state.logs].slice(0, 500)
                         };
@@ -594,7 +613,7 @@ export const useStore = create<State>()(
                 };
 
                 set((state) => ({
-                    logs: [logEntry, ...state.logs].slice(0, 100),
+                    logs: [logEntry, ...state.logs].slice(0, 500),
                 }));
             } catch (err) {
                 console.error('Failed to parse WebSocket message:', err);

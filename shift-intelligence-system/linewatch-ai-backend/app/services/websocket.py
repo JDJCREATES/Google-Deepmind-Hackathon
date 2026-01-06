@@ -65,9 +65,10 @@ class ConnectionManager:
         # Store loggable events (exclude high-frequency updates)
         msg_type = message.get('type', '')
         excluded_types = {
-            'visibility_sync', 'operator_data_update', 'supervisor_update',
-            'maintenance_crew_update', 'shift_status', 'machine_production_update',
-            'conveyor_box_update', 'warehouse_update', 'batch_update'
+            'visibility_sync', 'operator_data_update', 'supervisor_update', 'maintenance_crew_update', 
+            'shift_status', 'machine_production_update', 'machine_production_state', 'conveyor_box_update', 
+            'warehouse_update', 'batch_update', 'line_status', 'camera_update', 'kpi_update', 
+            'financial_update', 'box_arrived_warehouse'
         }
         
         if msg_type and msg_type not in excluded_types:

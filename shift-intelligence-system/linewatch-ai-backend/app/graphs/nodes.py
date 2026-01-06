@@ -194,6 +194,12 @@ Select at least 2 relevant frameworks.
             })
         
         # Parse content
+        # Strip markdown if present
+        if "```json" in text_content:
+            text_content = text_content.split("```json")[1].split("```")[0].strip()
+        elif "```" in text_content:
+            text_content = text_content.split("```")[1].split("```")[0].strip()
+
         result = parser.parse(text_content)
         frameworks = result.frameworks
         reasoning = result.reasoning
@@ -526,6 +532,12 @@ Output the detailed calculations and final posteriors according to the schema.
             })
         
         # 2. Parse JSON content
+        # Strip markdown if present
+        if "```json" in text_content:
+            text_content = text_content.split("```json")[1].split("```")[0].strip()
+        elif "```" in text_content:
+            text_content = text_content.split("```")[1].split("```")[0].strip()
+            
         result = parser.parse(text_content)
         posteriors = result.posteriors
         leading = result.leading_hypothesis_id
