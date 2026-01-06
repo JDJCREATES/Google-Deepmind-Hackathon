@@ -105,7 +105,7 @@ class ExperimentService:
         except Exception as e:
             logger.error(f"Failed to log experiment metric: {e}")
 
-    async def get_history(self, limit: int = 1000) -> List[Dict[str, Any]]:
+    async def get_history(self, limit: int = 1000, filename: str = None) -> List[Dict[str, Any]]:
         """Get recent history for frontend."""
         data = []
         try:
@@ -167,9 +167,19 @@ class ExperimentService:
             return ""
 
     def list_sessions(self) -> List[Dict[str, Any]]:
-        """Mock compatibility for now, or list exports."""
-        # For now, just return empty or list exports if we want
-        # The frontend might expect this method to exist
-        return []
+        """Return available sessions. Using SQLite DB as 'current' session."""
+        sessions = []
+        
+        # Add current DB session if it exists/has data
+        if os.path.exists(self.db_path):
+            stats = os.stat(self.db_path)
+            sessions.append({
+                "filename": "current",
+                "created_at": datetime.fromtimestamp(stats.st_ctime).isoformat(),
+                "size_bytes": stats.st_size,
+                "is_current": True
+            })
+            
+        return sessions
 
 experiment_service = ExperimentService()

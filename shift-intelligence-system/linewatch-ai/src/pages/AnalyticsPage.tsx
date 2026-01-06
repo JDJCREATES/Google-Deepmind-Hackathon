@@ -62,9 +62,12 @@ export default function AnalyticsPage() {
             if (json.length > 0 && !selectedSession) {
                 const current = json.find((s: any) => s.is_current) || json[0];
                 setSelectedSession(current.filename);
+            } else if (json.length === 0) {
+                 setLoading(false);
             }
         } catch (e) {
             console.error("Failed to fetch sessions", e);
+            setLoading(false);
         }
     };
     fetchSessions();

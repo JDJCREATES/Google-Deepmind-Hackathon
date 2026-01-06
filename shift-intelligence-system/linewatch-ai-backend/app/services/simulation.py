@@ -863,10 +863,34 @@ class SimulationService:
                  "availability": self.kpi.availability,
                  "performance": self.kpi.performance,
                  "quality": self.kpi.quality,
-                 "energy_efficiency": getattr(self.kpi, 'energy_efficiency', 1.0),
                  "uptime_hours": self.simulation_hours
              }
         })
+
+        # Log to Experiment Service (periodically, e.g. every 10 ticks = 5 seconds)
+        # We don't want to log every 0.5s as it fills DB too fast
+        if self.is_running and int(self.simulation_hours * 3600) % 5 == 0:
+            await experiment_service.log_metric(
+                sim_time_hours=self.simulation_hours,
+                kpi={
+                    "oee": self.kpi.oee,
+                    "safety_score": self.kpi.safety_score,
+                    "availability": self.kpi.availability,
+                    "performance": self.kpi.performance, 
+                    "quality": self.kpi.quality
+                },
+                fin={
+                    "total_revenue": self.financials.total_revenue,
+                    "total_expenses": self.financials.total_expenses,
+                    "balance": self.financials.balance,
+                    "hourly_wage_cost": self.financials.hourly_wage_cost
+                },
+                state={
+                    "active_alerts": [], # Placeholder - could link to alert service
+                    "safety_violations": [], # Placeholder
+                    "production_rate": self.production_rate_per_min
+                }
+            )
 
         
         # Broadcast all events in a SINGLE batched message
