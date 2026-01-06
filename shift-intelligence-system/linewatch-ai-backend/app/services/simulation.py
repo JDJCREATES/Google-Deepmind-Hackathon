@@ -252,6 +252,7 @@ class SimulationService:
         # =================================================================
         self.machine_production: Dict[int, Dict[str, Any]] = {}
         self._initialize_production_state()
+        self.production_rate_per_min = 0.0  # Track overall production rate
         
         # =================================================================
         # CONVEYOR BOXES
