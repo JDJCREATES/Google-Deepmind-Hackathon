@@ -16,6 +16,16 @@ from app.tools.compliance import (
     log_corrective_action,
     generate_compliance_report,
 )
+from app.tools.analysis import (
+    query_facility_subsystem,
+    get_facility_layout,
+    query_system_logs,
+)
+from app.tools.actions import (
+    query_available_resources,
+    submit_resource_request,
+    dispatch_personnel,
+)
 from app.utils.logging import get_agent_logger
 
 
@@ -40,12 +50,21 @@ class ComplianceAgent(BaseAgent):
     def __init__(self):
         """Initialize Compliance Agent with safety monitoring tools."""
         tools = [
+            # Compliance-specific tools
             get_safety_violations,
             classify_violation_severity,
             check_all_temperatures,
             trigger_safety_alarm,
             log_corrective_action,
             generate_compliance_report,
+            # General discovery tools
+            query_facility_subsystem,
+            get_facility_layout,
+            query_system_logs,
+            # General action tools
+            query_available_resources,
+            submit_resource_request,
+            dispatch_personnel,
         ]
         
         super().__init__(

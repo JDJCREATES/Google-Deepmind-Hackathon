@@ -171,9 +171,43 @@ async def submit_resource_request(
     
     request_id = f"REQ-{datetime.now().strftime('%Y%m%d')}-{str(uuid.uuid4())[:8]}"
     
-    # Log request (would integrate with procurement queue later)
+    # Log request
     print(f"📋 Resource Request: {quantity}x {resource_type} | Justification: {justification} | Cost: ${total_cost}")
     
+    # Handle camera installation specifically
+    if resource_type == "industrial_camera":
+        from app.services.camera_coverage import install_camera
+        from app.services.simulation import simulation
+        
+        # Determine installation locations (simplified for now - could be smarter)
+        cameras_installed = []
+        
+        for i in range(quantity):
+            # Install cameras in uncovered production zones
+            # For testing, place them evenly across production zone
+            y_position = 150 + (i * 150)  # Spread vertically
+            x_position = simulation.canvas_width / 2  # Center horizontally
+            
+            install_result = await install_camera(
+                location={"x": x_position, "y": y_position},
+                camera_type="visual"
+            )
+            cameras_installed.append(install_result)
+        
+        return {
+            "request_id": request_id,
+            "status": "approved_and_installed",
+            "resource_type": resource_type,
+            "quantity": quantity,
+            "total_cost": total_cost,
+            "delivery_hours": delivery_hours,
+            "justification_recorded": justification,
+            "urgency": urgency,
+            "cameras_installed": cameras_installed,
+            "note": "Cameras are now active and providing coverage"
+        }
+    
+    # Non-camera resources (parts, etc)
     return {
         "request_id": request_id,
         "status": "approved",

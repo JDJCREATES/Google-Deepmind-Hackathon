@@ -14,6 +14,16 @@ from app.tools.maintenance import (
     schedule_maintenance,
     create_work_order,
 )
+from app.tools.analysis import (
+    query_facility_subsystem,
+    get_facility_layout,
+    query_system_logs,
+)
+from app.tools.actions import (
+    query_available_resources,
+    submit_resource_request,
+    dispatch_personnel,
+)
 from app.utils.logging import get_agent_logger
 
 
@@ -30,10 +40,19 @@ class MaintenanceAgent(BaseAgent):
     
     def __init__(self):
         tools = [
+            # Maintenance-specific tools
             check_all_equipment_health,
-            dispatch_maintenance_crew,  # NEW: Real dispatch capability
+            dispatch_maintenance_crew,
             schedule_maintenance,
             create_work_order,
+            # General discovery tools  
+            query_facility_subsystem,
+            get_facility_layout,
+            query_system_logs,
+            # General action tools
+            query_available_resources,
+            submit_resource_request,
+            dispatch_personnel,
         ]
         
         super().__init__(

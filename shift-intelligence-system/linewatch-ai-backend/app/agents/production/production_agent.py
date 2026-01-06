@@ -15,9 +15,18 @@ from app.tools.production import (
     analyze_throughput_trend,
     predict_bottleneck,
     request_maintenance,
-    request_maintenance,
     check_line_staffing,
     set_production_speed,
+)
+from app.tools.analysis import (
+    query_facility_subsystem,
+    get_facility_layout,
+    query_system_logs,
+)
+from app.tools.actions import (
+    query_available_resources,
+    submit_resource_request,
+    dispatch_personnel,
 )
 from app.models.domain import LineStatus, AlertSeverity
 from app.utils.logging import get_agent_logger
@@ -44,15 +53,22 @@ class ProductionAgent(BaseAgent):
     def __init__(self):
         """Initialize Production Agent with tools and configuration."""
         tools = [
+            # Production-specific tools
             get_line_metrics,
             get_all_line_metrics,
             analyze_throughput_trend,
             predict_bottleneck,
             request_maintenance,
-            predict_bottleneck,
-            request_maintenance,
             check_line_staffing,
             set_production_speed,
+            # General discovery tools
+            query_facility_subsystem,
+            get_facility_layout,
+            query_system_logs,
+            # General action tools
+            query_available_resources,
+            submit_resource_request,
+            dispatch_personnel,
         ]
         
         super().__init__(

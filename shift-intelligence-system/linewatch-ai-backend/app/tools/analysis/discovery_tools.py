@@ -27,7 +27,9 @@ async def query_facility_subsystem(subsystem: str) -> Dict[str, Any]:
     """
     if subsystem == "monitoring":
         # Return raw camera/sensor data - agent must analyze for gaps
+        from app.services.camera_coverage import calculate_camera_coverage_stats
         cameras = simulation.layout.get("cameras", [])
+        coverage_stats = calculate_camera_coverage_stats(cameras)
         
         return {
             "subsystem": "monitoring",
@@ -48,6 +50,13 @@ async def query_facility_subsystem(subsystem: str) -> Dict[str, Any]:
                 "x_range": [150, simulation.canvas_width - 180],
                 "y_range": [100, simulation.canvas_height - 100],
                 "total_lines": 20
+            },
+            "coverage_analysis": {
+                "coverage_pct": coverage_stats["coverage_percentage"],
+                "camera_range_px": coverage_stats["camera_range_px"],
+                "lines_with_coverage": coverage_stats["covered_lines"],
+                "lines_without_coverage": coverage_stats["uncovered_lines"],
+                "note": "You can only detect violations/fatigue in covered areas"
             }
         }
     
