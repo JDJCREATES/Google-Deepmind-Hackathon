@@ -121,7 +121,7 @@ export default function DashboardPage() {
             <div className="flex flex-col">
                 <span className="text-[8px] lg:text-[9px] text-stone-600 font-mono uppercase">Burn</span>
                 <span className="text-orange-900/80 font-mono text-[10px] lg:text-xs">
-                    -${financials.hourly_wage_cost.toFixed(0)}/h
+                    -${financials.expenses_per_hour.toFixed(0)}/h
                 </span>
             </div>
         </div>

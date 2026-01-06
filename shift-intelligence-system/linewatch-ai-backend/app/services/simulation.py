@@ -840,14 +840,17 @@ class SimulationService:
         })
         
         # Broadcast Finance Update
+        revenue_per_hour = self.financials.total_revenue / self.simulation_hours if self.simulation_hours > 0 else 0.0
+        
         await manager.broadcast({
             "type": "financial_update",
             "data": {
                 "balance": self.financials.balance,
                 "total_revenue": self.financials.total_revenue,
                 "total_expenses": self.financials.total_expenses,
-                "hourly_wage_cost": self.financials.hourly_wage_cost,
-                "last_updated": datetime.now().isoformat()
+                "revenue_per_hour": revenue_per_hour,
+                "expenses_per_hour": self.financials.hourly_wage_cost,
+                "net_profit": self.financials.total_revenue - self.financials.total_expenses
             }
         })
         
@@ -858,22 +861,13 @@ class SimulationService:
                  "oee": self.kpi.oee,
                  "safety_score": self.kpi.safety_score,
                  "availability": self.kpi.availability,
-                 "performance": self.kpi.performance, 
-                 "uptime_hours": self.kpi.uptime_hours
+                 "performance": self.kpi.performance,
+                 "quality": self.kpi.quality,
+                 "energy_efficiency": getattr(self.kpi, 'energy_efficiency', 1.0),
+                 "uptime_hours": self.simulation_hours
              }
-         })
-        
-        # Broadcast KPI Update
-        await manager.broadcast({
-             "type": "kpi_update",
-             "data": {
-                 "oee": self.kpi.oee,
-                 "safety_score": self.kpi.safety_score,
-                 "availability": self.kpi.availability,
-                 "performance": self.kpi.performance, 
-                 "uptime_hours": self.kpi.uptime_hours
-             }
-         })
+        })
+
         
         # Broadcast all events in a SINGLE batched message
         # This prevents overwhelming the WebSocket with 15-20+ messages per tick

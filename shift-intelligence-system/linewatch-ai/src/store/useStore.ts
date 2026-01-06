@@ -256,6 +256,27 @@ interface State {
         decision?: string;
         timestamp: string;
     }>;
+    
+    // NEW: Financials
+    financials: {
+        balance: number;
+        total_revenue: number;
+        total_expenses: number;
+        revenue_per_hour: number;
+        expenses_per_hour: number;
+        net_profit: number;
+    };
+    
+    // NEW: KPIs
+    kpi: {
+        oee: number;
+        availability: number;
+        performance: number;
+        quality: number;
+        safety_score: number;
+        energy_efficiency: number;
+        uptime_hours: number;
+    } | null;
 
     // Actions
     fetchLayout: () => Promise<void>;
@@ -291,15 +312,18 @@ export const useStore = create<State>()(
         balance: 10000.0,
         total_revenue: 0.0,
         total_expenses: 0.0,
-        hourly_wage_cost: 0.0,
-        last_updated: new Date().toISOString()
+        revenue_per_hour: 0.0,
+        expenses_per_hour: 0.0,
+        net_profit: 0.0
     },
     
     kpi: {
         oee: 1.0,
         availability: 1.0,
         performance: 1.0,
+        quality: 1.0,
         safety_score: 100.0,
+        energy_efficiency: 1.0,
         uptime_hours: 0.0
     },
 
