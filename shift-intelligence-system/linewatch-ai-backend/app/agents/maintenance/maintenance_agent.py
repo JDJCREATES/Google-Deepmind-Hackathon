@@ -41,7 +41,7 @@ class MaintenanceAgent(BaseAgent):
             system_prompt=MAINTENANCE_AGENT_SYSTEM_PROMPT,
             tools=tools,
             use_flash_model=True,
-            thinking_level=1,  # Fast for monitoring
+            thinking_level="minimal",  # Fast for monitoring
         )
         
         logger.info("✅ Maintenance Agent initialized")

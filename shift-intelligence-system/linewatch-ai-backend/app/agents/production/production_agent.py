@@ -60,7 +60,7 @@ class ProductionAgent(BaseAgent):
             system_prompt=PRODUCTION_AGENT_SYSTEM_PROMPT,
             tools=tools,
             use_flash_model=True,  # Use Flash for fast 30s loops
-            thinking_level=1,  # Quick decisions for monitoring
+            thinking_level="minimal",  # Fast for monitoring
         )
         
 
@@ -420,7 +420,7 @@ Provide specific, actionable recommendations.""",
                 check_line_staffing,
             ],
             use_flash_model=True,
-            thinking_level=2,  # Deeper thinking for root cause analysis
+            thinking_level="medium",  # Deeper thinking for root cause analysis
         )
         
         return subagent

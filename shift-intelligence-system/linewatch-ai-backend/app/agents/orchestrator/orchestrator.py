@@ -53,7 +53,7 @@ class MasterOrchestrator(BaseAgent):
             system_prompt=ORCHESTRATOR_SYSTEM_PROMPT,
             tools=tools,
             use_flash_model=False,  # Use Pro model for deep reasoning
-            thinking_level=3,  # Deepest level for complex decisions
+            thinking_level="high",  # Deepest level for complex decisions
         )
         
         logger.info("✅ Master Orchestrator initialized (Gemini 3 Pro)")

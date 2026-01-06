@@ -16,7 +16,7 @@ Each node represents a step in the hypothesis-driven reasoning process:
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -41,6 +41,33 @@ from app.reasoning import (
 from app.utils.logging import get_agent_logger
 from app.utils.llm import with_retry
 from app.graphs.state import HypothesisMarketState
+
+
+def extract_gemini_content(content: Any) -> Tuple[str, Optional[str]]:
+    """
+    Extract text and thinking from Gemini 3 response content.
+    
+    When include_thoughts=True, content is a list:
+    [{'type': 'thinking', 'thinking': '...'}, {'type': 'text', 'text': '...', 'extras': {...}}]
+    
+    Returns:
+        (text_content, thinking_content) - thinking may be None
+    """
+    if isinstance(content, str):
+        return content, None
+    
+    if isinstance(content, list):
+        text = ""
+        thinking = None
+        for part in content:
+            if isinstance(part, dict):
+                if part.get('type') == 'thinking':
+                    thinking = part.get('thinking', '')
+                elif part.get('type') == 'text':
+                    text = part.get('text', '')
+        return text, thinking
+    
+    return str(content), None
 
 
 logger = get_agent_logger("HypothesisNodes")
@@ -144,31 +171,30 @@ Select at least 2 relevant frameworks.
     
     messages = [HumanMessage(content=prompt_text)]
     
-    # Inject thought signature if present (continuity)
-    if state.get("thought_signature"):
-        messages.append({
-            "role": "model",
-            "parts": [{"thought_signature": state["thought_signature"]}]
-        })
+    # Note: Thought signature continuity is now handled via include_thoughts=True
+    # The old manual injection caused MESSAGE_COERCION_FAILURE
 
     try:
         # Raw invoke to get message with potential thought signature
         msg = await llm.ainvoke(messages)
         
-        # Extract text content - Gemini may return list format
-        content_text = msg.content
-        if isinstance(content_text, list):
-            # Extract text from list of content parts
-            text_parts = []
-            for part in content_text:
-                if isinstance(part, dict) and 'text' in part:
-                    text_parts.append(part['text'])
-                elif isinstance(part, str):
-                    text_parts.append(part)
-            content_text = "".join(text_parts)
+        # Extract text and thinking from Gemini 3 response
+        text_content, thinking = extract_gemini_content(msg.content)
         
-        # 1. Parse content
-        result = parser.parse(content_text)
+        # Broadcast thinking if available
+        if thinking:
+            from app.services.websocket import manager
+            await manager.broadcast({
+                "type": "agent_thinking",
+                "data": {
+                    "agent": "hypothesis_market",
+                    "thought": thinking[:300],
+                    "timestamp": datetime.now().isoformat()
+                }
+            })
+        
+        # Parse content
+        result = parser.parse(text_content)
         frameworks = result.frameworks
         reasoning = result.reasoning
         
@@ -479,35 +505,45 @@ Output the detailed calculations and final posteriors according to the schema.
 
     messages = [HumanMessage(content=prompt_text)]
     
-    # Inject thought signature for continuity
-    if state.get("thought_signature"):
-        messages.append({
-            "role": "model",
-            "parts": [{"thought_signature": state["thought_signature"]}]
-        })
+    # Note: Thought signature continuity now handled via include_thoughts=True
 
     try:
         msg = await llm.ainvoke(messages)
         
-        # 1. Parse content
-        result = parser.parse(msg.content)
+        # 1. Extract text and thinking from Gemini 3 response
+        text_content, thinking = extract_gemini_content(msg.content)
+        
+        # Broadcast thinking if available
+        if thinking:
+            from app.services.websocket import manager
+            await manager.broadcast({
+                "type": "agent_thinking",
+                "data": {
+                    "agent": "hypothesis_market",
+                    "thought": thinking[:300],
+                    "timestamp": datetime.now().isoformat()
+                }
+            })
+        
+        # 2. Parse JSON content
+        result = parser.parse(text_content)
         posteriors = result.posteriors
         leading = result.leading_hypothesis_id
         confidence = result.leader_confidence
         converged = result.converged
         
-        # 2. Extract Thought Signature
+        # 3. Extract Thought Signature (from extras in text part)
         new_sig = None
-        if hasattr(msg, 'content') and isinstance(msg.content, list):
-             for part in msg.content:
-                 if isinstance(part, dict) and 'thought_signature' in part:
-                     new_sig = part['thought_signature']
-                     break
-        elif hasattr(msg, 'content') and isinstance(msg.content, dict) and 'thought_signature' in msg.content:
-             new_sig = msg.content['thought_signature']
+        if isinstance(msg.content, list):
+            for part in msg.content:
+                if isinstance(part, dict):
+                    extras = part.get('extras', {})
+                    if 'signature' in extras:
+                        new_sig = extras['signature']
+                        break
         
         if new_sig:
-             logger.debug("Captured thought signature from update_beliefs")
+            logger.debug("Captured thought signature from update_beliefs")
         
         logger.debug(f"✅ Beliefs updated. Leader confidence: {confidence:.2f} ({result.reasoning[:50]}...)")
         

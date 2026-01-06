@@ -112,7 +112,7 @@ const HierarchicalAgentGraph: React.FC = () => {
                     const offsetX = (Math.random() - 0.5) * 80;
 
                     
-                    // Auto-remove after 12 seconds
+                    // Auto-remove after 30 seconds (increased from 12s for better visibility)
                     const timeoutId = window.setTimeout(() => {
                         setThoughtBubbles(prev => {
                             const bubble = prev.find(b => b.id === bubbleId);
@@ -120,7 +120,7 @@ const HierarchicalAgentGraph: React.FC = () => {
                             if (bubble?.isDragged) return prev;
                             return prev.filter(b => b.id !== bubbleId);
                         });
-                    }, 12000);
+                    }, 30000);
                     
                     setThoughtBubbles(prev => [...prev, {
                         id: bubbleId,

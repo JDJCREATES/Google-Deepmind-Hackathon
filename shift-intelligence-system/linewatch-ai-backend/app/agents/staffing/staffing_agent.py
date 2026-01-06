@@ -122,7 +122,7 @@ class StaffingAgent(BaseAgent):
             system_prompt=STAFFING_AGENT_SYSTEM_PROMPT,
             tools=tools,
             use_flash_model=True,
-            thinking_level=2,  # Balanced for scheduling decisions
+            thinking_level="medium",  # Balanced for scheduling decisions
         )
         
         
@@ -539,7 +539,7 @@ Consider:
                 check_fatigue_levels,
             ],
             use_flash_model=True,
-            thinking_level=2,
+            thinking_level="medium",
         )
     
     async def _create_coverage_predictor(self) -> BaseAgent:
@@ -562,7 +562,7 @@ Provide proactive recommendations to prevent understaffing.""",
                 get_all_lines_occupancy,
             ],
             use_flash_model=True,
-            thinking_level=2,
+            thinking_level="medium",
         )
     
     async def _create_hr_assistant(self) -> BaseAgent:
@@ -587,6 +587,6 @@ Remember:
                 escalate_to_human_supervisor,
             ],
             use_flash_model=True,
-            thinking_level=2,
+            thinking_level="medium",
         )
 

@@ -66,7 +66,7 @@ class BaseAgent(ABC):
         system_prompt: str,
         tools: List[BaseTool],
         use_flash_model: bool = True,
-        thinking_level: int = 1,
+        thinking_level: str = "high",  # 'minimal', 'low', 'medium', 'high'
     ):
         """
         Initialize base agent.
@@ -76,10 +76,7 @@ class BaseAgent(ABC):
             system_prompt: Agent's system instructions
             tools: List of LangChain tools available to agent
             use_flash_model: Use gemini-3.0-flash (fast) vs gemini-3.0-pro (smart)
-            thinking_level: Gemini 3 thinking depth (1-3)
-                1 = Quick decisions
-                2 = Standard reasoning
-                3 = Deep analysis (for Orchestrator)
+            thinking_level: Gemini 3 thinking depth - 'minimal', 'low', 'medium', 'high'
         """
         self.agent_name = agent_name
         self.system_prompt = system_prompt
@@ -93,6 +90,8 @@ class BaseAgent(ABC):
             model=model_name,
             google_api_key=settings.google_api_key,
             temperature=0.7,
+            thinking_level=self.thinking_level,  # 'minimal', 'low', 'medium', 'high'
+            include_thoughts=True,  # Enable thought summaries in response
         )
         # =================================================================
         # SQLite Checkpointer (Lazy Initialization)
@@ -503,8 +502,7 @@ class BaseAgent(ABC):
             ReasoningResult with thought process and proposed actions
         """
         self.logger.info(f"🧠 [{self.agent_name}] Starting reasoning phase...")
-        # Broadcast a cleaner 'analyzing' message
-        await self._broadcast_thought(f"Analyzing {len(context)} context parameters...")
+        # Removed generic "Analyzing X context parameters" - not meaningful
         
         # Build reasoning prompt
         reasoning_prompt = self._build_reasoning_prompt(context)
@@ -520,14 +518,9 @@ class BaseAgent(ABC):
                 "parts": [{"thought_signature": self.latest_thought_signature}]
             })
         
-        # Stream Gemini 3's thinking in real-time
+        # Invoke agent (simple, working approach)
         await self._ensure_agent_initialized()
-        
-        # Use astream to get streaming thoughts
-        thoughts_buffer = []
-        final_result = None
-        
-        async for chunk in self.agent.astream(
+        result = await self.agent.ainvoke(
             {"messages": messages},
             config={
                 "configurable": {
@@ -535,28 +528,7 @@ class BaseAgent(ABC):
                     "thinking_level": self.thinking_level,
                 }
             }
-        ):
-            # Extract thinking from chunk
-            if "messages" in chunk:
-                for msg in chunk["messages"]:
-                    # Check for thinking content
-                    if hasattr(msg, 'content'):
-                        content = msg.content
-                        # Broadcast thinking as it streams
-                        if isinstance(content, str) and len(content) > 10:
-                            await self._broadcast_thought(content[:200])
-                            thoughts_buffer.append(content)
-                    
-                    # Check for explicit thinking attribute (Gemini 3)
-                    if hasattr(msg, 'thinking') and msg.thinking:
-                        await self._broadcast_thought(msg.thinking[:200])
-                        thoughts_buffer.append(msg.thinking)
-            
-            # Store final result
-            final_result = chunk
-        
-        # Use the final chunk as result
-        result = final_result if final_result else {"messages": messages}
+        )
         
         # Track token usage
         await self._track_tokens(result)
@@ -564,13 +536,18 @@ class BaseAgent(ABC):
         # Extract and store thought signature
         await self._extract_thought_signature(result)
         
-        # Extract proposed actions and confidence from final result
-        thoughts = " ".join(thoughts_buffer) if thoughts_buffer else "No explicit reasoning trace available"
+        # Extract thoughts and reasoning
+        thoughts = self._extract_thoughts(result)
         proposed_actions = self._extract_proposed_actions(result)
         confidence = self._calculate_confidence(result)
         
-        await self._broadcast_thought(f"Reasoning complete. Confidence: {confidence:.2f}")
-             await self._broadcast_thought(f"Plan: {len(proposed_actions)} actions proposed")
+        # Broadcast only meaningful content - actual thoughts
+        if thoughts and thoughts != "No explicit reasoning trace available":
+            await self._broadcast_thought(thoughts[:300])  # Actual LLM reasoning
+        elif proposed_actions:
+            # If no thoughts but we have actions, show what we're doing
+            actions_summary = ", ".join(proposed_actions[:2])
+            await self._broadcast_thought(f"Decided: {actions_summary}")
 
         # Determine if escalation needed
         should_escalate = confidence < 0.7 or self._detect_critical_situation(context)
@@ -1038,8 +1015,8 @@ Needs: Higher-level coordination or human decision
         """
         from pydantic import BaseModel, Field
         
-        # Broadcast that we're working on this hypothesis
-        await self._broadcast_thought(f"Proposing verification for hypothesis: {hypothesis.description[:100]}...")
+        # Note: The actual meaningful rationale is broadcast when we get the result (line ~1049)
+        # Removed generic "Proposing verification..." spam
         
         class VerificationTool(BaseModel):
             """Tool call to verify hypothesis."""

@@ -53,7 +53,7 @@ class ComplianceAgent(BaseAgent):
             system_prompt=COMPLIANCE_AGENT_SYSTEM_PROMPT,
             tools=tools,
             use_flash_model=True,
-            thinking_level=2,  # Balanced for safety classification
+            thinking_level="medium",  # Balanced for safety classification
         )
         
         logger.info("✅ Compliance Agent initialized")
@@ -266,7 +266,7 @@ Provide precise severity classification with detailed reasoning.""",
                 classify_violation_severity,
             ],
             use_flash_model=True,
-            thinking_level=2,
+            thinking_level="medium",
         )
         
         return subagent
