@@ -18,6 +18,7 @@ from app.tools.analysis import (
     query_facility_subsystem,
     get_facility_layout,
     query_system_logs,
+    analyze_historical_patterns,
 )
 from app.tools.actions import (
     query_available_resources,
@@ -49,6 +50,7 @@ class MaintenanceAgent(BaseAgent):
             query_facility_subsystem,
             get_facility_layout,
             query_system_logs,
+            analyze_historical_patterns,
             # General action tools
             query_available_resources,
             submit_resource_request,

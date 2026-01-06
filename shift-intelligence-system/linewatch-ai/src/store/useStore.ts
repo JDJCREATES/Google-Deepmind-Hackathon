@@ -164,9 +164,7 @@ export interface StoreState {
     supervisor: SupervisorState | null;
     maintenanceCrew: MaintenanceCrewState | null;
     
-    // NEW: Financials
-    financials: FinancialState;
-    
+  
     // State
     warehouseInventory: WarehouseInventory;
     machineProduction: {[key: number]: MachineProductionState};
@@ -229,12 +227,24 @@ interface State {
     warehouseInventory: WarehouseInventory;
     machineProductionState: Record<number, MachineProductionState>;
     
-    // NEW: Supervisor & Fatigue
-    supervisor: Supervisor | null;
+// NEW: Supervisor & Fatigue
+    supervisor: {
+        id: string;
+        position: { x: number; y: number };
+        state: 'idle' | 'moving' | 'monitoring' | 'relieving';
+        path?: Array<{ x: number; y: number }>;
+        targetId?: string;
+    } | null;
     operators: Record<string, OperatorData>; // Centralized operators state (with fatigue)
     
     // NEW: Maintenance Crew
-    maintenanceCrew: Supervisor | null; // Re-use Supervisor type for now as structure is similar
+    maintenanceCrew: {
+        id: string;
+        position: { x: number; y: number };
+        state: 'idle' | 'moving' | 'working';
+        path?: Array<{ x: number; y: number }>;
+        task?: string;
+    } | null;
 
     // NEW: Reasoning Traces (for graph visualization)
     reasoningTraces: Array<{
@@ -523,6 +533,14 @@ export const useStore = create<State>()(
                     set(state => ({
                         reasoningTraces: [...(state.reasoningTraces || []), trace].slice(-20)
                     }));
+                    return;
+                }
+
+                // Agent Collaboration (debates, trade-offs)
+                if (message.type === 'agent_collaboration') {
+                    const { event, ...data } = message.data;
+                    console.log(`🤝 Collaboration: ${event}`, data);
+                    // Could expand to store collaboration events for visualization
                     return;
                 }
 
