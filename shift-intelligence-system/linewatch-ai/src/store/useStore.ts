@@ -236,6 +236,17 @@ interface State {
     // NEW: Maintenance Crew
     maintenanceCrew: Supervisor | null; // Re-use Supervisor type for now as structure is similar
 
+    // NEW: Reasoning Traces (for graph visualization)
+    reasoningTraces: Array<{
+        id: string;
+        agent: string;
+        step: string;
+        thought: string;
+        confidence: number;
+        decision?: string;
+        timestamp: string;
+    }>;
+
     // Actions
     fetchLayout: () => Promise<void>;
     connectWebSocket: () => void;
@@ -263,6 +274,7 @@ export const useStore = create<State>()(
     supervisor: null,
     operators: {},
     maintenanceCrew: null,
+    reasoningTraces: [],
 
     // NEW: Financials Initial State
     financials: {
@@ -478,6 +490,39 @@ export const useStore = create<State>()(
                 // Maintenance Crew updates
                 if (message.type === 'maintenance_crew_update') {
                     set({ maintenanceCrew: message.data });
+                    return;
+                }
+
+                // Camera Installation
+                if (message.type === 'camera_installed') {
+                    const newCamera = message.data.camera;
+                    set(state => ({
+                        cameraStates: {
+                            ...state.cameraStates,
+                            [newCamera.id]: newCamera
+                        }
+                    }));
+                    console.log(`📹 Camera installed: ${newCamera.id} at (${newCamera.position.x}, ${newCamera.position.y})`);
+                    return;
+                }
+
+                // Maintenance Tech Dispatch
+                if (message.type === 'maintenance_tech_dispatched') {
+                    const tech = message.data;
+                    // Add to maintenance crew state or create separate tech tracking
+                    set({ maintenanceCrew: tech });
+                    console.log(`🔧 Maintenance tech ${tech.id} dispatched to ${tech.task}`);
+                    return;
+                }
+
+                // Reasoning Trace (for graph visualization)
+                if (message.type === 'reasoning_trace') {
+                    const trace = message.data;
+                    console.log(`🧠 Reasoning: ${trace.agent} → ${trace.step} (confidence: ${trace.confidence})`);
+                    // Trigger graph update by adding to a reasoning traces array
+                    set(state => ({
+                        reasoningTraces: [...(state.reasoningTraces || []), trace].slice(-20)
+                    }));
                     return;
                 }
 

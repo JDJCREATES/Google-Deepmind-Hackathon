@@ -30,14 +30,18 @@ class TraceInput(BaseModel):
     decision: Optional[str] = Field(default=None, description="Decision made")
 
 
-def add_reasoning_trace(
+async def add_reasoning_trace(
     agent_name: str,
     step_name: str,
     thought_process: str,
     confidence: float,
     decision: str | None = None
 ):
-    """Add a reasoning trace from an agent's thinking process (thread-safe)."""
+    """
+    Add a reasoning trace from an agent's thinking process (thread-safe).
+    
+    Broadcasts trace via WebSocket for real-time visualization.
+    """
     with _trace_lock:
         trace = {
             "id": f"trace_{len(_reasoning_traces)}",
@@ -52,7 +56,18 @@ def add_reasoning_trace(
         # Keep only last 100 traces
         while len(_reasoning_traces) > 100:
             _reasoning_traces.pop(0)
-        return trace
+    
+    # Broadcast to frontend (outside lock to avoid blocking)
+    try:
+        from app.services.websocket import manager
+        await manager.broadcast({
+            "type": "reasoning_trace",
+            "data": trace
+        })
+    except Exception as e:
+        logger.error(f"Failed to broadcast reasoning trace: {e}")
+    
+    return trace
 
 
 def add_thought_signature(signature: dict):

@@ -164,86 +164,72 @@ const SharedHypothesisGraph: React.FC = () => {
         };
     };
     
-    // Real-time highlighting from logs
+    // Real-time highlighting from reasoning traces
+    const { reasoningTraces } = useStore();
+    
     useEffect(() => {
-        if (logs.length === 0) return;
+        if (!reasoningTraces || reasoningTraces.length === 0) return;
         
-        const latestLog = logs[0].toLowerCase();
+        const latestTrace = reasoningTraces[reasoningTraces.length - 1];
         
-        const agentMap: Record<string, string> = {
-            'production': 'production_agent',
-            'compliance': 'compliance_agent',
-            'staffing': 'staffing_agent',
-            'maintenance': 'maintenance_agent',
-        };
+        // Map agent names to node IDs
+        const agentNodeId = latestTrace.agent.toLowerCase().replace('agent', '') + '_agent';
         
-        const stepMap: Record<string, string> = {
-            'knowledge': 'load_knowledge',
-            'framework': 'classify_frameworks',
-            'hypothesis': 'generate_hypotheses',
-            'evidence': 'gather_evidence',
-            'belief': 'update_beliefs',
-            'select': 'select_action',
+        // Map reasoning steps to hypothesis market nodes
+        const stepMapping: Record<string, string> = {
+            'reason': 'generate_hypotheses',
+            'gather_evidence': 'gather_evidence',
+            'update_beliefs': 'update_beliefs',
+            'select_action': 'select_action',
             'execute': 'execute_action',
-            'validate': 'validate',
+            'execute_action': 'execute_action',
         };
         
-        let agent: string | null = null;
-        let step: string | null = null;
+        const stepNodeId = stepMapping[latestTrace.step] || latestTrace.step;
         
-        for (const [kw, id] of Object.entries(agentMap)) {
-            if (latestLog.includes(kw)) { agent = id; break; }
-        }
-        for (const [kw, id] of Object.entries(stepMap)) {
-            if (latestLog.includes(kw)) { step = id; break; }
-        }
+        // Create dynamic edge from agent to step
+        const dynamicEdgeId = `dynamic_${agentNodeId}_${stepNodeId}`;
+        setEdges((eds) => {
+            const filtered = eds.filter(e => !e.id.startsWith('dynamic_'));
+            return [...filtered, {
+                id: dynamicEdgeId,
+                source: agentNodeId,
+                target: stepNodeId,
+                type: 'smoothstep',
+                animated: true,
+                style: { stroke: '#FCD34D', strokeWidth: 3 },
+                markerEnd: { type: MarkerType.ArrowClosed, color: '#FCD34D' },
+                label: `${(latestTrace.confidence * 100).toFixed(0)}%`,
+                labelStyle: { fontSize: 10, fill: '#FCD34D', fontWeight: 'bold' },
+            }];
+        });
         
-        if (agent && step) {
-            setActiveAgentStep({ agent, step });
-            
-            // Add dynamic edge
-            const dynamicEdgeId = `dynamic_${agent}_${step}`;
-            setEdges((eds) => {
-                const filtered = eds.filter(e => !e.id.startsWith('dynamic_'));
-                return [...filtered, {
-                    id: dynamicEdgeId,
-                    source: agent!,
-                    target: step!,
-                    type: 'smoothstep',
-                    animated: true,
-                    style: { stroke: '#FCD34D', strokeWidth: 3 },
-                    markerEnd: { type: MarkerType.ArrowClosed, color: '#FCD34D' },
-                }];
-            });
-            
-            // Highlight nodes
-            setNodes((nds) => nds.map(n => {
-                if (n.id === agent || n.id === step) {
-                    return {
-                        ...n,
-                        style: {
-                            ...n.style,
-                            boxShadow: '0 0 20px 8px rgba(251, 191, 36, 0.7)',
-                            border: '2px solid #FCD34D',
-                        }
-                    };
-                }
-                return n;
-            }));
-            
-            // Reset after 2.5s
-            setTimeout(() => {
-                setActiveAgentStep(null);
-                setEdges((eds) => eds.filter(e => !e.id.startsWith('dynamic_')));
-                setNodes((nds) => nds.map(n => ({
+        // Highlight nodes
+        setNodes((nds) => nds.map(n => {
+            if (n.id === agentNodeId || n.id === stepNodeId) {
+                return {
                     ...n,
-                    style: n.data.nodeType === 'agent' 
-                        ? { ...n.style, boxShadow: 'none', border: '2px solid #3B82F6' }
-                        : { ...n.style, boxShadow: 'none' }
-                })));
-            }, 2500);
-        }
-    }, [logs]);
+                    style: {
+                        ...n.style,
+                        boxShadow: '0 0 20px 8px rgba(251, 191, 36, 0.7)',
+                        border: '2px solid #FCD34D',
+                    }
+                };
+            }
+            return n;
+        }));
+        
+        // Reset after 2.5s
+        setTimeout(() => {
+            setEdges((eds) => eds.filter(e => !e.id.startsWith('dynamic_')));
+            setNodes((nds) => nds.map(n => ({
+                ...n,
+                style: n.data.nodeType === 'agent' 
+                    ? { ...n.style, boxShadow: 'none', border: '2px solid #3B82F6' }
+                    : { ...n.style, boxShadow: 'none' }
+            })));
+        }, 2500);
+    }, [reasoningTraces]);
     
     return (
         <div style={{ width: '100%', height: '100%' }}>

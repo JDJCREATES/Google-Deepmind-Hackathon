@@ -76,7 +76,7 @@ class ProductionAgent(BaseAgent):
             system_prompt=PRODUCTION_AGENT_SYSTEM_PROMPT,
             tools=tools,
             use_flash_model=True,  # Use Flash for fast 30s loops
-            thinking_level="minimal",  # Fast for monitoring
+            thinking_level="medium",  # Show reasoning for transparency
         )
         
 

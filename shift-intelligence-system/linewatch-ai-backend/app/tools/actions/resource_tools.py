@@ -271,9 +271,57 @@ async def dispatch_personnel(
     
     eta = datetime.now() + timedelta(minutes=response_minutes)
     
-    # Log dispatch (would integrate with simulation later)
+    # Log dispatch
     print(f"🔧 Personnel Dispatch: {role} to {location} | Task: {task_description} | ETA: {response_minutes}min")
     
+    # Spawn maintenance tech on map
+    if role in ["maintenance_tech", "specialist_tech"]:
+        from app.services.simulation import simulation
+        from app.services.websocket import manager
+        
+        # Determine target coordinates based on location string
+        target_x, target_y = _parse_location(location, simulation)
+        
+        # Create maintenance tech entity
+        tech_entity = {
+            "id": personnel_id,
+            "name": personnel_id,
+            "role": role,
+            "position": {"x": 50, "y": 50},  # Start at break room
+            "target": {"x": target_x, "y": target_y},
+            "status": "en_route",
+            "task": task_description,
+            "dispatch_id": dispatch_id,
+            "eta_minutes": response_minutes,
+            "spawned_at": simulation.simulation_hours
+        }
+        
+        # Broadcast tech spawn to frontend
+        await manager.broadcast({
+            "type": "maintenance_tech_dispatched",
+            "data": tech_entity
+        })
+        
+        # Schedule tech to "arrive" and fix the issue
+        # For now, we'll simulate instant fix after ETA
+        # In future, could use pathfinding for realistic movement
+        
+        return {
+            "dispatch_id": dispatch_id,
+            "personnel_id": personnel_id,
+            "role": role,
+            "status": "dispatched",
+            "location": location,
+            "task": task_description,
+            "eta_minutes": response_minutes,
+            "eta_timestamp": eta.isoformat(),
+            "estimated_duration_hours": estimated_duration_hours,
+            "estimated_cost": hourly_cost * estimated_duration_hours,
+            "priority": priority,
+            "tech_visible_on_map": True
+        }
+    
+    # Non-maintenance personnel (safety inspectors, etc)
     return {
         "dispatch_id": dispatch_id,
         "personnel_id": personnel_id,
@@ -287,3 +335,28 @@ async def dispatch_personnel(
         "estimated_cost": hourly_cost * estimated_duration_hours,
         "priority": priority
     }
+
+
+def _parse_location(location_str: str, simulation) -> tuple:
+    """Parse location string to coordinates."""
+    # Handle line references
+    if location_str.startswith("line_"):
+        try:
+            line_num = int(location_str.split("_")[1])
+            # Lines are positioned vertically in production zone
+            y = 100 + (line_num * 30)
+            x = simulation.canvas_width / 2
+            return (x, y)
+        except:
+            pass
+    
+    # Handle zone references
+    if "production" in location_str.lower():
+        return (simulation.canvas_width / 2, simulation.canvas_height / 2)
+    elif "warehouse" in location_str.lower():
+        return (40, simulation.canvas_height / 2)
+    elif "breakroom" in location_str.lower():
+        return (simulation.canvas_width - 50, simulation.canvas_height / 2)
+    
+    # Default to center of production zone
+    return (simulation.canvas_width / 2, simulation.canvas_height / 2)
