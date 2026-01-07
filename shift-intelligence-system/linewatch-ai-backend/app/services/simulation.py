@@ -909,7 +909,9 @@ class SimulationService:
                 for event in events:
                     event_data = event.get("data", {})
                     if event_data.get("severity") in ["HIGH", "CRITICAL"]:
-                        asyncio.create_task(self._trigger_investigation(event_data))
+                        task = asyncio.create_task(self._trigger_investigation(event_data))
+                        self.pending_tasks.add(task)
+                        task.add_done_callback(lambda t: self.pending_tasks.discard(t))
     
     # =========================================================================
     # PRODUCTION LOGIC
@@ -1367,8 +1369,14 @@ class SimulationService:
         
         for op in self.operators:
             if op["on_break"]:
-                # Recover fatigue while on break
-                op["fatigue"] = max(0.0, op["fatigue"] - BREAK_RECOVERY_RATE)
+                # Only recover fatigue if actually AT the breakroom (status is 'on_break')
+                # 'moving_to_break' means they are still walking
+                if op["status"] == "on_break":
+                    op["fatigue"] = max(0.0, op["fatigue"] - BREAK_RECOVERY_RATE)
+                    op["current_action"] = "recovering"
+                else:
+                    # Still walking to break, no recovery yet
+                    pass
                 
                 # End break when fully recovered
                 if op["fatigue"] <= 0:
@@ -1432,8 +1440,11 @@ class SimulationService:
                 dy = target_y - self.supervisor["y"]
                 dist = math.sqrt(dx * dx + dy * dy)
                 
-                if dist < speed:
-                    # Reached waypoint
+                # CONSISTENT SPEED CHECK: Use tick_rate scaling
+                step_dist = speed * self.tick_rate
+                
+                if dist < step_dist:
+                    # Reached fast enough to snap to waypoint
                     self.supervisor["x"] = target_x
                     self.supervisor["y"] = target_y
                     self.supervisor["path_index"] += 1
@@ -1444,17 +1455,17 @@ class SimulationService:
                         if self.supervisor["status"] == "moving_to_operator":
                             self._relieve_operator()
                         else:
-                            # Just visiting a location (checking alert)
+                            # Just visiting a location
                             logger.info(f"✅ Supervisor arrived at location for check")
                             self.supervisor["status"] = "idle"
                             self.supervisor["current_action"] = "monitoring"
                             self.supervisor["path"] = []
                 else:
                     # Move towards waypoint
-                    self.supervisor["x"] += (dx / dist) * speed * self.tick_rate # Applied tick rate
-                    self.supervisor["y"] += (dy / dist) * speed * self.tick_rate
+                    self.supervisor["x"] += (dx / dist) * step_dist
+                    self.supervisor["y"] += (dy / dist) * step_dist
         
-        # Handle supervisor returning to office (MOVED FROM BELOW)
+        # Handle supervisor returning to office
         elif self.supervisor["status"] == "returning" and self.supervisor["path"]:
             path = self.supervisor["path"]
             idx = self.supervisor["path_index"]
@@ -1465,7 +1476,9 @@ class SimulationService:
                 dy = target_y - self.supervisor["y"]
                 dist = math.sqrt(dx * dx + dy * dy)
                 
-                if dist < speed * self.tick_rate:
+                step_dist = speed * self.tick_rate
+                
+                if dist < step_dist:
                     # Reached waypoint
                     self.supervisor["x"] = target_x
                     self.supervisor["y"] = target_y
@@ -1474,14 +1487,15 @@ class SimulationService:
                     # Check if reached final destination
                     if self.supervisor["path_index"] >= len(path):
                         # Arrived back at office
+                        logger.info("✅ Supervisor returned to office")
                         self.supervisor["status"] = "idle"
                         self.supervisor["current_action"] = "monitoring"
                         self.supervisor["assigned_operator_id"] = None
                         self.supervisor["path"] = []
                 else:
                     # Move towards waypoint
-                    self.supervisor["x"] += (dx / dist) * speed * self.tick_rate
-                    self.supervisor["y"] += (dy / dist) * speed * self.tick_rate
+                    self.supervisor["x"] += (dx / dist) * step_dist
+                    self.supervisor["y"] += (dy / dist) * step_dist
 
         # =====================================================================
         # UPDATE MAINTENANCE CREW

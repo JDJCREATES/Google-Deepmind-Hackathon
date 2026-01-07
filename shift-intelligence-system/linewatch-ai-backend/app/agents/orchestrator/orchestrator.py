@@ -188,10 +188,12 @@ class MasterOrchestrator(BaseAgent):
         
         # Use simple invoke for now, returning dict
         try:
+            # Use unique thread ID to avoid history corruption from previous interrupted runs
+            thread_id = f"orchestrator-decision-{datetime.now().timestamp()}"
             await self._ensure_agent_initialized()
             result = await self.agent.ainvoke(
                 {"messages": [{"role": "user", "content": prompt}]},
-                config={"configurable": {"thread_id": "orchestrator-decision"}}
+                config={"configurable": {"thread_id": thread_id}}
             )
             # Parse finding
             content = result["messages"][-1].content

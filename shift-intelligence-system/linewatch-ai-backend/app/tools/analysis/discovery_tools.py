@@ -181,7 +181,7 @@ async def query_system_logs(
     """
     # Simulated log data - in production would query actual log system
     from datetime import datetime, timedelta
-    from app.services.shared_context import shared_context
+    from app.state.context import shared_context
     
     logs = []
     
