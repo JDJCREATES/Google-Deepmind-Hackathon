@@ -176,10 +176,14 @@ class MasterOrchestrator(BaseAgent):
         1. Review the evidence critically.
         2. Consider the strategic insights from past decisions.
         3. Decide if the leading hypothesis is truly proven.
-        4. Select the best course of action (can be different from hypothesis recommendation).
+        4. Select the best course of action.
         5. If confidence is too low (<0.7), mandate "GATHER MORE EVIDENCE" or "ESCALATE TO HUMAN".
         
-        Output your binding verdict and reasoning.
+        OUTPUT FORMAT:
+        Write a decisive, authoritative verdict.
+        - Avoid robotic phrases like "Based on the evidence..."
+        - Use first-person active voice: "I have determined...", "The data confirms...", "We must immediately..."
+        - Explain *why* you are making this decision.
         """
         
         # Use simple invoke for now, returning dict

@@ -712,6 +712,23 @@ async def execute_action_node(state: HypothesisMarketState) -> Dict[str, Any]:
                  "outcome": "Supervisor dispatched for roster optimization check"
              }
 
+        # 5. Evacuate / Stop Lines (Critical Safety)
+        elif "evacuate" in action.lower() or "suspend line" in action.lower():
+             from app.services.simulation import simulation
+             # Stop all lines
+             for line_id in simulation.machine_production:
+                 simulation.machine_production[line_id]["is_running"] = False
+             
+             # Log
+             simulation.logger.critical("🚨 EMERGENCY STOP: All lines suspended by Orchestrator")
+             
+             result = {
+                 "success": True,
+                 "action": action,
+                 "executed_at": datetime.now().isoformat(),
+                 "outcome": "All production lines suspended. Maintenance crew and Supervisor flagged for emergency."
+             }
+
         # Fallback for unhandled actions
         if not result.get("success") and result["outcome"] == "Action not recognized by execution node":
              logger.warning(f"⚠️ Action '{action}' not bound in execute_nodes.py - Simulating success")

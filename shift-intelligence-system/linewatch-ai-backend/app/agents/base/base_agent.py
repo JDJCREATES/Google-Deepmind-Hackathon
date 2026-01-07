@@ -1022,7 +1022,7 @@ Needs: Higher-level coordination or human decision
         class VerificationTool(BaseModel):
             """Tool call to verify hypothesis."""
             tool_name: str = Field(description="Name of the tool to call (e.g. check_sensors, inspect_machine)")
-            rationale: str = Field(description="Why this tool will verify the hypothesis")
+            rationale: str = Field(description="Your internal thought process for choosing this tool. Use natural, varied language. Avoid starting with 'To verify' or 'In order to'. Instead use 'I suspect...', 'Checking...', 'Need to confirm...', or 'My hypothesis implies...'.")
             parameters: Dict[str, Any] = Field(description="Parameters for the tool call")
             
         system = f"""You are the {self.agent_name}. 
@@ -1036,7 +1036,13 @@ Needs: Higher-level coordination or human decision
         - check_schedule(employee_id, shift_date)
         - verify_compliance(regulation_id, check_point)
         
-        Select the most relevant tool and providing realistic simulation parameters.
+        INSTRUCTIONS:
+        1. Select the most relevant tool.
+        2. Provide a rationale that sounds like a human reasoning. 
+           - INVALID: "To verify X, I will check Y."
+           - VALID: "I'm seeing anomalous data here. I need to pull the sensor logs to see if it's a glitch or real."
+           - VALID: "If this hypothesis is true, the camera should show it. Checking feed now."
+        3. Be concise but expressive.
         """
         
         llm = self.llm.with_structured_output(VerificationTool)

@@ -1202,6 +1202,12 @@ class SimulationService:
                         op["path_index"] = 0
                         op["status"] = "moving_to_break"
                         logger.info(f"☕ {op['name']} walking to breakroom")
+                    else:
+                        # Fallback: Teleport if pathfinding fails to avoid getting stuck
+                        logger.warning(f"⚠️ Could not pathfind to breakroom for {op['name']} - Teleporting")
+                        op["x"] = breakroom_x
+                        op["y"] = breakroom_y
+                        op["status"] = "on_break"
                 
                 # If already at breakroom, just chill
                 elif dist_to_break <= 30:
@@ -1221,6 +1227,12 @@ class SimulationService:
                         op["path_index"] = 0
                         op["status"] = "returning_to_work"
                         logger.info(f"🔙 {op['name']} returning to station")
+                     else:
+                        # Fallback teleport
+                        op["x"] = op["target_x"]
+                        op["y"] = op["target_y"]
+                        op["status"] = "working"
+                        op["just_returned_from_break"] = False
                 
                 elif dist_to_station <= 20:
                     # Arrived at station
@@ -1261,11 +1273,12 @@ class SimulationService:
                     op["y"] += (dy / dist) * speed * self.tick_rate
                     
                     # Keep status accurate
+                    # CRITICAL FIX: Don't overwrite moving_to_break status if path exists
                     if op.get("on_break"):
                         op["status"] = "moving_to_break"
                     elif op.get("just_returned_from_break"):
                          op["status"] = "returning_to_work"
-                    else:
+                    elif op["status"] not in ["moving_to_break", "returning_to_work"]:
                         op["status"] = "moving"
             else:
                 # No active path - operator is stationary
