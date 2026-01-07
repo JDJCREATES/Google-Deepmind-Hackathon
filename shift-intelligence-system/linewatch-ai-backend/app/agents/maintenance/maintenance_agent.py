@@ -69,12 +69,20 @@ class MaintenanceAgent(BaseAgent):
     
     def filter_context(self, full_context: Dict[str, Any]) -> Dict[str, Any]:
         """Filter context to maintenance-only data."""
-        return {
+        # Start with specific state keys
+        filtered = {
             "machines": full_context.get("machines", {}),
             "line_health": full_context.get("line_health", {}),
             "maintenance_crew": full_context.get("maintenance_crew", {}),
             "current_shift": full_context.get("current_shift"),
         }
+        
+        # Preserve specific event keys if present (for signal context)
+        for key in ["line_id", "severity", "source", "description", "details"]:
+            if key in full_context:
+                filtered[key] = full_context[key]
+                
+        return filtered
     
     
     # ========== HYPOTHESIS GENERATION ==========
@@ -90,10 +98,16 @@ class MaintenanceAgent(BaseAgent):
         
         hypotheses = []
         signal_desc = signal.get('description', '')
+        signal_data = signal.get('data', {})
+        
+        # safely extract line_id from data or top level
+        line_id = signal_data.get('line_id') or signal.get('line_id') or 0
         
         # FMEA: Predictive failure
-        if any(w in signal_desc.lower() for w in ['vibration', 'noise', 'smoke', 'fire', 'overheat', 'breakdown']):
-            hs_desc = "Critical component failure detection"
+        # Broaden keywords to catch "Equipment Warning" and specific failures described in simulation
+        triggers = ['vibration', 'noise', 'smoke', 'fire', 'overheat', 'breakdown', 'jam', 'stuck', 'failure', 'warning', 'drop', 'misalignment']
+        if any(w in signal_desc.lower() for w in triggers):
+            hs_desc = f"Critical component failure detection on Line {line_id}"
             
             hypotheses.append(create_hypothesis(
                 framework=HypothesisFramework.FMEA,
@@ -103,7 +117,7 @@ class MaintenanceAgent(BaseAgent):
                 impact=10.0,
                 urgency=10.0,
                 proposed_by=self.agent_name,
-                recommended_action=f"dispatch_maintenance_crew(machine_id={signal.get('line_id', 0)})",
+                recommended_action=f"dispatch_maintenance_crew(machine_id={line_id})",
                 target_agent="MaintenanceAgent"
             ))
             

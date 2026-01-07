@@ -1408,7 +1408,8 @@ class SimulationService:
             pass
         
         # Move supervisor along path
-        if self.supervisor["status"] == "moving_to_operator" and self.supervisor["path"]:
+        # Handle both operator relief and location checks
+        if self.supervisor["status"] in ["moving_to_operator", "moving_to_location"] and self.supervisor["path"]:
             path = self.supervisor["path"]
             idx = self.supervisor["path_index"]
             
@@ -1426,8 +1427,15 @@ class SimulationService:
                     
                     # Check if reached final destination
                     if self.supervisor["path_index"] >= len(path):
-                        # Arrived at operator
-                        self._relieve_operator()
+                        # Arrived at destination
+                        if self.supervisor["status"] == "moving_to_operator":
+                            self._relieve_operator()
+                        else:
+                            # Just visiting a location (checking alert)
+                            logger.info(f"✅ Supervisor arrived at location for check")
+                            self.supervisor["status"] = "idle"
+                            self.supervisor["current_action"] = "monitoring"
+                            self.supervisor["path"] = []
                 else:
                     # Move towards waypoint
                     self.supervisor["x"] += (dx / dist) * speed * self.tick_rate # Applied tick rate
@@ -1534,7 +1542,8 @@ class SimulationService:
         if path:
             self.supervisor["path"] = path
             self.supervisor["path_index"] = 0
-            self.supervisor["status"] = "moving_to_operator" # Reuse moving status
+            # Use distinct status so we don't try to relieve an operator upon arrival
+            self.supervisor["status"] = "moving_to_location" 
             self.supervisor["current_action"] = f"checking_{reason}"
             logger.info(f"👔 Supervisor dispatched to ({target_x}, {target_y}) for: {reason}")
             return True
@@ -1651,9 +1660,10 @@ class SimulationService:
         if operator:
             # Send operator on break
             operator["on_break"] = True
-            operator["status"] = "on_break"
-            operator["current_action"] = "resting"
-            logger.info(f"✅ Supervisor relieved {operator['name']}, now on break")
+            operator["status"] = "moving_to_break" # Set moving status immediately
+            operator["current_action"] = "walking_to_breakroom"
+            operator["path"] = [] # Clear existing path to force new pathfinding
+            logger.info(f"✅ Supervisor relieved {operator['name']}, now moving to break")
             
             # Supervisor returns to office using stored coordinates
             office_x = self.supervisor.get("office_x", self.canvas_width - 50)
@@ -1679,6 +1689,14 @@ class SimulationService:
                 self.supervisor["current_action"] = "monitoring"
             
             self.supervisor["assigned_operator_id"] = None
+        else:
+            # ERROR STATE: Operator not found
+            logger.error(f"❌ Supervisor arrived but could not find operator {op_id}")
+            # Reset supervisor to avoid getting stuck
+            self.supervisor["status"] = "idle"
+            self.supervisor["current_action"] = "monitoring"
+            self.supervisor["assigned_operator_id"] = None
+            self.supervisor["path"] = []
         
 
     

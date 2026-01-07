@@ -105,6 +105,64 @@ class ExperimentService:
         except Exception as e:
             logger.error(f"Failed to log experiment metric: {e}")
 
+    async def log_metric(self, sim_time_hours: float, kpi: dict, fin: dict, state: dict):
+        """Log a new data point to the database."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await self._ensure_table(db)
+                
+                # Extract values with safe defaults
+                oee = kpi.get('oee', 0.0)
+                safety_score = kpi.get('safety_score', 100.0)
+                
+                revenue = fin.get('total_revenue', 0.0)
+                expenses = fin.get('total_expenses', 0.0)
+                profit = fin.get('balance', 0.0) # Using balance as profit_cum proxy for now
+                if 'net_profit' in fin:
+                    profit = fin['net_profit']
+                elif 'balance' in fin: 
+                     profit = fin['balance']
+
+                active_alerts = len(state.get('active_alerts', []))
+                safety_violations = len(state.get('safety_violations', []))
+                
+                # Mock token stats for now if not tracked
+                tokens_in = state.get('agent_tokens_in', 0)
+                tokens_out = state.get('agent_tokens_out', 0)
+                agent_cost = state.get('agent_cost_est', 0.0)
+                
+                prod_rate = state.get('production_rate', 0.0)
+                inventory = state.get('inventory_level', 0)
+
+                await db.execute("""
+                    INSERT INTO experiment_logs (
+                        timestamp, sim_time_hours, oee, safety_score,
+                        revenue_cum, expenses_cum, profit_cum,
+                        active_alerts, safety_incidents,
+                        agent_tokens_in, agent_tokens_out, agent_cost_est,
+                        production_rate_avg, inventory_level
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    datetime.now().isoformat(),
+                    sim_time_hours,
+                    oee,
+                    safety_score,
+                    revenue,
+                    expenses,
+                    profit,
+                    active_alerts,
+                    safety_violations,
+                    tokens_in,
+                    tokens_out,
+                    agent_cost,
+                    prod_rate,
+                    inventory
+                ))
+                await db.commit()
+                
+        except Exception as e:
+            logger.error(f"Failed to log experiment metric: {e}")
+
     async def get_history(self, limit: int = 1000, filename: str = None) -> List[Dict[str, Any]]:
         """Get recent history for frontend."""
         data = []
