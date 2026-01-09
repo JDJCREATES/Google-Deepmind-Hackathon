@@ -181,9 +181,8 @@ class MasterOrchestrator(BaseAgent):
         
         OUTPUT FORMAT:
         Write a decisive, authoritative verdict.
-        - Avoid robotic phrases like "Based on the evidence..."
         - Use first-person active voice: "I have determined...", "The data confirms...", "We must immediately..."
-        - Explain *why* you are making this decision.
+        - Explain *why* you are making this decision, citing specific agents (e.g. "As StaffingAgent verified...").
         """
         
         # Use simple invoke for now, returning dict

@@ -52,7 +52,7 @@ def should_gather_more_evidence(
     """
     converged = state.get("converged", False)
     iteration = state.get("iteration", 0)
-    max_iterations = state.get("max_iterations", 5)
+    max_iterations = state.get("max_iterations", 3)  # Reduced from 5 for faster demos
     
     if not converged and iteration < max_iterations:
         return "gather_more"

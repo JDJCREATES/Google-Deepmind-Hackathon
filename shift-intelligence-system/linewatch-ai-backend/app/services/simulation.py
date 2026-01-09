@@ -631,6 +631,14 @@ class SimulationService:
         # Reset line health
         for line_id in self.line_health:
             self.line_health[line_id] = 100.0
+            
+        # Reset Operators (Staggered Fatigue)
+        for op in self.operators:
+            op["fatigue"] = random.uniform(0, 25.0) # Random start to prevent sync
+            op["on_break"] = False
+            op["break_requested"] = False
+            op["status"] = "monitoring"
+            op["current_action"] = "monitoring"
     
     # =========================================================================
     # LIFECYCLE
@@ -1365,7 +1373,19 @@ class SimulationService:
         """Accumulate operator fatigue and handle break requests."""
         # Fatigue constants - TUNED
         FATIGUE_THRESHOLD = 60.0  # Request break at 60%
+        CRITICAL_FATIGUE = 90.0   # Force break at 90%
         BREAK_RECOVERY_RATE = 2.0  # Fatigue recovery per tick on break
+        MAX_CONCURRENT_BREAKS = 2
+        
+        # Calculate current break load
+        current_breaks = 0
+        for o in self.operators:
+            if o.get("on_break") or o.get("status") == "moving_to_break" or o.get("break_requested"):
+                current_breaks += 1
+        
+        # Supervisor counts if relieving
+        if self.supervisor["current_action"].startswith("relieving"):
+             current_breaks += 1
         
         for op in self.operators:
             if op["on_break"]:
@@ -1392,12 +1412,40 @@ class SimulationService:
                 op["fatigue"] = min(100.0, op["fatigue"] + fatigue_rate)
                 
                 # Request break if fatigued
-                if op["fatigue"] >= FATIGUE_THRESHOLD and not op["break_requested"]:
-                    op["break_requested"] = True
-                    logger.info(f"😓 {op['name']} is requesting a break (fatigue: {op['fatigue']:.1f}%)")
+                if op["fatigue"] >= FATIGUE_THRESHOLD and not op["break_requested"] and not op["on_break"]:
                     
-                    # EMIT FATIGUE EVENT to trigger Staffing Agent
-                    task = asyncio.create_task(self._trigger_investigation({
+                    # VOLUNTARY BREAK CHECK
+                    # If slots available and not critical, go on your own
+                    if current_breaks < MAX_CONCURRENT_BREAKS and op["fatigue"] < CRITICAL_FATIGUE:
+                        current_breaks += 1
+                        op["on_break"] = True
+                        op["status"] = "moving_to_break"
+                        op["current_action"] = "walking_to_break"
+                        
+                        # Find breakroom target
+                        br_zone = next((z for z in self.layout.get("zones", []) if z["id"] == "break_room"), None)
+                        target_x = int(br_zone["x"] + br_zone["width"]/2) if br_zone else self.canvas_width - 50
+                        target_y = int(br_zone["y"] + br_zone["height"]/2) if br_zone else 50
+                        
+                        path = self.pathfinding.find_path(op["x"], op["y"], target_x, target_y)
+                        if path:
+                            op["path"] = path
+                            op["path_index"] = 0
+                            op["target_x"] = target_x
+                            op["target_y"] = target_y
+                        else:
+                            op["x"], op["y"] = target_x, target_y
+                            op["status"] = "on_break"
+                            
+                        logger.info(f"☕ {op['name']} taking voluntary break (Fatigue: {op['fatigue']:.1f}%)")
+                    
+                    else:
+                        # Full queue OR Critical -> Request Supervisor Help
+                        op["break_requested"] = True
+                        logger.warning(f"😓 {op['name']} requesting relief (Fatigue: {op['fatigue']:.1f}%, Queue Full)")
+                        
+                        # EMIT FATIGUE EVENT to trigger Staffing Agent
+                        task = asyncio.create_task(self._trigger_investigation({
                         "type": "FATIGUE_ALERT",
                         "description": f"Operator {op['name']} requesting break (fatigue: {op['fatigue']:.1f}%)",
                         "operator_id": op["id"],
@@ -1457,9 +1505,12 @@ class SimulationService:
                         else:
                             # Just visiting a location
                             logger.info(f"✅ Supervisor arrived at location for check")
-                            self.supervisor["status"] = "idle"
-                            self.supervisor["current_action"] = "monitoring"
-                            self.supervisor["path"] = []
+                            
+                            # Stay briefly then return
+                            self.supervisor["current_action"] = "inspecting"
+                            
+                            # Trigger return after short delay (simulated via immediate return planning)
+                            self._return_supervisor_to_office()
                 else:
                     # Move towards waypoint
                     self.supervisor["x"] += (dx / dist) * step_dist
@@ -1679,6 +1730,32 @@ class SimulationService:
         ]
 
     
+    def _return_supervisor_to_office(self):
+        """Send supervisor back to office."""
+        office_x = self.supervisor.get("office_x", self.canvas_width - 50)
+        office_y = self.supervisor.get("office_y", int(self.canvas_height * 0.7))
+        
+        path = self.pathfinding.find_path(
+            self.supervisor["x"],
+            self.supervisor["y"],
+            office_x,
+            office_y
+        )
+        
+        if path:
+            self.supervisor["path"] = path
+            self.supervisor["path_index"] = 0
+            self.supervisor["status"] = "returning"
+            self.supervisor["current_action"] = "returning_to_office"
+            logger.info("🔙 Supervisor returning to office")
+        else:
+            # Fallback: teleport back
+            self.supervisor["x"] = office_x
+            self.supervisor["y"] = office_y
+            self.supervisor["status"] = "idle"
+            self.supervisor["current_action"] = "monitoring"
+            self.supervisor["path"] = []
+
     def _relieve_operator(self):
         """Relieve an operator and send them on break."""
         op_id = self.supervisor["assigned_operator_id"]
@@ -1692,38 +1769,16 @@ class SimulationService:
             operator["path"] = [] # Clear existing path to force new pathfinding
             logger.info(f"✅ Supervisor relieved {operator['name']}, now moving to break")
             
-            # Supervisor returns to office using stored coordinates
-            office_x = self.supervisor.get("office_x", self.canvas_width - 50)
-            office_y = self.supervisor.get("office_y", int(self.canvas_height * 0.7))
-            
-            path = self.pathfinding.find_path(
-                self.supervisor["x"],
-                self.supervisor["y"],
-                office_x,
-                office_y
-            )
-            
-            if path:
-                self.supervisor["path"] = path
-                self.supervisor["path_index"] = 0
-                self.supervisor["status"] = "returning"
-                self.supervisor["current_action"] = "returning_to_office"
-            else:
-                # Fallback: teleport back
-                self.supervisor["x"] = office_x
-                self.supervisor["y"] = office_y
-                self.supervisor["status"] = "idle"
-                self.supervisor["current_action"] = "monitoring"
+            # Supervisor returns to office
+            self._return_supervisor_to_office()
             
             self.supervisor["assigned_operator_id"] = None
         else:
             # ERROR STATE: Operator not found
             logger.error(f"❌ Supervisor arrived but could not find operator {op_id}")
             # Reset supervisor to avoid getting stuck
-            self.supervisor["status"] = "idle"
-            self.supervisor["current_action"] = "monitoring"
+            self._return_supervisor_to_office()
             self.supervisor["assigned_operator_id"] = None
-            self.supervisor["path"] = []
         
 
     

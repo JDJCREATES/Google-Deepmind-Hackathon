@@ -1007,7 +1007,7 @@ Needs: Higher-level coordination or human decision
 
     # ========== DYNAMIC VERIFICATION ==========
 
-    async def propose_verification(self, hypothesis: Any) -> Dict[str, Any]:
+    async def propose_verification(self, hypothesis: Any, silence: bool = False) -> Dict[str, Any]:
         """
         Propose a tool call to verify a specific hypothesis.
         
@@ -1054,7 +1054,8 @@ Needs: Higher-level coordination or human decision
             # Token tracking happens in the reason() method where we have access to usage data
             
             # Broadcast the human-readable rationale instead of the tool name
-            await self._broadcast_thought(f"{result.rationale}")
+            if not silence:
+                await self._broadcast_thought(f"{result.rationale}")
             
             return {
                 "tool": result.tool_name,

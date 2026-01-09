@@ -19,9 +19,14 @@ def is_position_visible_to_cameras(x: float, y: float, cameras: List[Dict]) -> b
     CAMERA_RANGE = 80  # pixels - cameras can see 80px radius
     
     for camera in cameras:
-        cam_pos = camera.get("position", {})
-        cam_x = cam_pos.get("x", 0)
-        cam_y = cam_pos.get("y", 0)
+        # Check both flat structure (layout service) and nested position (install tool)
+        if "position" in camera:
+            cam_pos = camera.get("position", {})
+            cam_x = cam_pos.get("x", 0)
+            cam_y = cam_pos.get("y", 0)
+        else:
+            cam_x = camera.get("x", 0)
+            cam_y = camera.get("y", 0)
         
         # Calculate distance
         dist = ((x - cam_x) ** 2 + (y - cam_y) ** 2) ** 0.5
