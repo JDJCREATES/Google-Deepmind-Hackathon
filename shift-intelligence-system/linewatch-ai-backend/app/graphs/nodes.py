@@ -446,6 +446,7 @@ async def gather_evidence_node(state: HypothesisMarketState) -> Dict[str, Any]:
         verification_plan = await agent.propose_verification(hypothesis, silence=True)
         
         # Managed log broadcast
+        from app.services.websocket import manager
         await manager.broadcast({
             "type": "agent_action",
             "data": {
@@ -753,21 +754,34 @@ async def execute_action_node(state: HypothesisMarketState) -> Dict[str, Any]:
                  "outcome": "Supervisor dispatched for roster optimization check"
              }
 
-        # 5. Evacuate / Stop Lines (Critical Safety)
-        elif "evacuate" in action.lower() or "suspend line" in action.lower():
+        # 5. Critical: Evacuate (Fire/Life Safety)
+        elif "evacuate" in action.lower():
              from app.services.simulation import simulation
-             # Stop all lines
-             for line_id in simulation.machine_production:
-                 simulation.machine_production[line_id]["is_running"] = False
+             await simulation.trigger_evacuation()
              
-             # Log
-             logger.critical("🚨 EMERGENCY STOP: All lines suspended by Orchestrator")
+             logger.critical("🚨 ACTION EXECUTED: Emergency Evacuation Triggered")
              
              result = {
                  "success": True,
                  "action": action,
                  "executed_at": datetime.now().isoformat(),
-                 "outcome": "All production lines suspended. Maintenance crew and Supervisor flagged for emergency."
+                 "outcome": "Emergency Evacuation Protocol Initiated. All staff moving to Assembly Point."
+             }
+
+        # 6. Suspend Lines (Operational Safety)
+        elif "suspend line" in action.lower() or "stop line" in action.lower():
+             from app.services.simulation import simulation
+             # Stop all lines (without moving people)
+             for line_id in simulation.machine_production:
+                 await simulation._suspend_production_line(str(line_id), "Orchestrator Suspend Command")
+             
+             logger.warning("🛑 ACTION EXECUTED: Production Suspended")
+             
+             result = {
+                 "success": True,
+                 "action": action,
+                 "executed_at": datetime.now().isoformat(),
+                 "outcome": "Production lines suspended active operations."
              }
 
         # Fallback for unhandled actions

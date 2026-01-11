@@ -639,6 +639,9 @@ class SimulationService:
             op["break_requested"] = False
             op["status"] = "monitoring"
             op["current_action"] = "monitoring"
+            
+        # Reset Evacuation State
+        self.evacuation_active = False
     
     # =========================================================================
     # LIFECYCLE
@@ -1191,8 +1194,30 @@ class SimulationService:
         speed = 50.0  # pixels per second
         
         for op in self.operators:
-            # Skip inactive operators
-            if not op.get("is_active", True):
+            # === EVACUATION LOGIC (Top Priority) ===
+            if self.evacuation_active:
+                assembly_x, assembly_y = 1150, 250
+                dist = math.hypot(op["x"] - assembly_x, op["y"] - assembly_y)
+                
+                if dist > 30:
+                    if not op["path"] or op["status"] != "evacuating":
+                        path = self.pathfinding.find_path(op["x"], op["y"], assembly_x, assembly_y)
+                        if path:
+                            op["path"] = path
+                            op["path_index"] = 0
+                            op["status"] = "evacuating"
+                            logger.info(f"🚨 {op['name']} evacuating to Assembly Point")
+                        else:
+                            # Teleport in emergency if stuck
+                             op["x"] = assembly_x
+                             op["y"] = assembly_y
+                             op["status"] = "evacuated"
+                else:
+                     op["status"] = "evacuated"
+                     op["current_action"] = "waiting_at_assembly"
+            
+            # Skip inactive operators (unless evacuating, handled above)
+            elif not op.get("is_active", True):
                 continue
                 
             # === BREAK LOGIC ===
@@ -1656,6 +1681,42 @@ class SimulationService:
             
         logger.warning(f"⚠️ No path found for maintenance crew to Line {machine_id}")
         return False
+
+    async def trigger_evacuation(self):
+        """Trigger emergency evacuation."""
+        if self.evacuation_active:
+            return
+            
+        logger.critical("🚨 TRIGGERING EMERGENCY EVACUATION 🚨")
+        self.evacuation_active = True
+        
+        # 1. Suspend all lines
+        for line_id in self.machine_production:
+             await self._suspend_production_line(str(line_id), "Emergency Evacuation")
+            
+        # 2. Update status for all staff
+        for op in self.operators:
+            op["status"] = "evacuating"
+            op["current_action"] = "evacuating"
+            op["path"] = [] 
+            
+        self.supervisor["status"] = "evacuating"
+        self.supervisor["current_action"] = "coordinating_evacuation"
+        
+        # Supervisor moves to assembly point
+        assembly_path = self.pathfinding.find_path(self.supervisor["x"], self.supervisor["y"], 1150, 250)
+        if assembly_path:
+             self.supervisor["path"] = assembly_path
+             self.supervisor["path_index"] = 0
+             
+        await manager.broadcast({
+            "type": "evacuation_alert",
+            "data": {
+                "status": "ACTIVE",
+                "message": "EMERGENCY EVACUATION IN PROGRESS - PROCEED TO ASSEMBLY POINT",
+                "timestamp": datetime.now().isoformat()
+            }
+        })
 
     def trigger_operator_break(self, operator_id: str) -> bool:
         """

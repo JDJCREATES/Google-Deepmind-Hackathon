@@ -241,11 +241,16 @@ class StaffingAgent(BaseAgent):
         breaks_scheduled = []
         high_fatigue = fatigue_report.get("high_fatigue", [])
         
-        for worker in high_fatigue[:3]:  # Limit to 3
+        # Strict limit: Only schedule 1 break at a time to prevent mass exodus
+        for worker in high_fatigue[:1]: 
+            # Only intervene if fatigue is critical (voluntary system handles < 85%)
+            if worker["fatigue_level"] < 0.85:
+                continue
+                
             try:
                 break_result = await schedule_break(
                     employee_id=worker["employee_id"],
-                    duration_minutes=30 if worker["fatigue_level"] > 0.8 else 15,
+                    duration_minutes=30 if worker["fatigue_level"] > 0.9 else 15,
                 )
                 breaks_scheduled.append(break_result)
             except Exception as e:

@@ -215,6 +215,15 @@ class LayoutService:
             "x": breakroom_cam_x, "y": breakroom_cam_y, "rotation": 90, 
             "fov": 50, "range": 150, "status": "active"
         })
+
+        # Cam 7: Entrance/Assembly Point (User Req: Monitoring outside/entrance)
+        entrance_x = canvas_w - 50
+        entrance_y = canvas_h * 0.5  # middle of right side
+        layout["cameras"].append({
+            "id": "cam_07", "label": "CAM-07", "lines_covered": [],
+            "x": entrance_x - 40, "y": entrance_y, "rotation": 0, # Point right towards door
+            "fov": 90, "range": 200, "status": "active"
+        })
         
         # RESTORED: Operator Generation
         operator_names = ["Alex", "Jordan", "Sam", "Casey", "Riley"]
