@@ -816,6 +816,20 @@ async def execute_action_node(state: HypothesisMarketState) -> Dict[str, Any]:
     
     logger.info(f"✅ Action executed: {result['outcome']}")
     
+    # Broadcast SUCCESSFUL action to frontend
+    try:
+        from app.services.websocket import manager
+        await manager.broadcast({
+            "type": "agent_action",
+            "data": {
+                "agent": "ORCHESTRATOR", # Action node runs under orchestrator authority
+                "actions": [f"✅ Executed: {result['action']}", f"Result: {result['outcome']}"],
+                "timestamp": datetime.now().isoformat()
+            }
+        })
+    except Exception as e:
+        logger.warning(f"Failed to broadcast action: {e}")
+    
     return {"action_result": result}
 
 

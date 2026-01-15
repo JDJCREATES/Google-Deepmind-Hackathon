@@ -781,7 +781,8 @@ class SimulationService:
             events.append(self._generate_breakdown())
         
         if random.random() < (settings.event_probability_safety_violation / 10):
-            events.append(self._trigger_safety_violation())
+            violation_event = await self._trigger_safety_violation()
+            events.append(violation_event)
         
         # 9. PROCESS ECONOMY (wages, sales)
         self._process_finances(self.tick_rate)
@@ -1469,18 +1470,19 @@ class SimulationService:
                         op["break_requested"] = True
                         logger.warning(f"😓 {op['name']} requesting relief (Fatigue: {op['fatigue']:.1f}%, Queue Full)")
                         
+                        
                         # EMIT FATIGUE EVENT to trigger Staffing Agent
                         task = asyncio.create_task(self._trigger_investigation({
-                        "type": "FATIGUE_ALERT",
-                        "description": f"Operator {op['name']} requesting break (fatigue: {op['fatigue']:.1f}%)",
-                        "operator_id": op["id"],
-                        "operator_name": op["name"],
-                        "fatigue_level": op["fatigue"],
-                        "severity": "MEDIUM"
-                    }))
-                    # Track task for cancellation on stop
-                    self.pending_tasks.add(task)
-                    task.add_done_callback(lambda t: self.pending_tasks.discard(t))
+                            "type": "FATIGUE_ALERT",
+                            "description": f"Operator {op['name']} requesting break (fatigue: {op['fatigue']:.1f}%)",
+                            "operator_id": op["id"],
+                            "operator_name": op["name"],
+                            "fatigue_level": op["fatigue"],
+                            "severity": "MEDIUM"
+                        }))
+                        # Track task for cancellation on stop
+                        self.pending_tasks.add(task)
+                        task.add_done_callback(lambda t: self.pending_tasks.discard(t))
     
     def _move_supervisor(self):
         """Handle supervisor movement and operator relief logic."""
@@ -1973,8 +1975,8 @@ class SimulationService:
             }
         }
     
-    def _trigger_safety_violation(self) -> Dict[str, Any]:
-        """Make an operator walk into a dangerous zone."""
+    async def _trigger_safety_violation(self) -> Dict[str, Any]:
+        """Make an operator walk into a dangerous zone and trigger investigation."""
         if not self.operators or not self.layout["lines"]:
             return {"type": "noop", "data": {}}
         
@@ -1995,15 +1997,30 @@ class SimulationService:
             op["status"] = "moving"
             op["current_action"] = "VIOLATION"
         
-        return {
+        # Create the signal
+        signal = {
             "type": "visual_signal",
             "data": {
                 "source": "Safety_Cam",
                 "description": f"Safety Violation: {op['name']} entering restricted area {line['label']}",
                 "severity": "CRITICAL",
-                "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat()
             }
         }
+        
+        # TRIGGER INVESTIGATION so agents actually respond
+        await self._trigger_investigation({
+            "type": "safety_violation",
+            "description": signal["data"]["description"],
+            "operator": op["name"],
+            "operator_id": op["id"],
+            "line_label": line["label"],
+            "line_id": line.get("id", "unknown"),
+            "severity": "CRITICAL",
+            "camera": "Safety_Cam"
+        })
+        
+        return signal
     
     async def _trigger_investigation(self, event_data: dict):
         """Run hypothesis market for a critical event (only if simulation is running)."""

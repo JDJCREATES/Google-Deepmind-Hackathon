@@ -65,6 +65,7 @@ from app.api.routers import simulation as sim_router
 from app.api.routers import human as human_router
 from app.api.routers import hypothesis as hypo_router
 from app.api.routers import graph as graph_router
+from app.api.routers import experiment as experiment_router
 from app.api.routers import learning as learning_router
 from app.api.routers import session as session_router
 

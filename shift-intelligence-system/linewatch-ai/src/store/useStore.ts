@@ -669,6 +669,20 @@ export const useStore = create<State>()(
                 
                 // Deduplicate Agent Thoughts and Activities
                 let description = message.data?.thought || JSON.stringify(message.data);
+
+                if (message.type === 'agent_action') {
+                    // Start with the agent name if available
+                    description = "";
+                    
+                    // Add actions if they exist
+                    if (message.data.actions && Array.isArray(message.data.actions)) {
+                         description = message.data.actions.join(' | ');
+                    } else if (message.data.action) {
+                         description = message.data.action;
+                    } else {
+                         description = "Action Executed";
+                    }
+                }
                 
                 if (message.type === 'agent_thought' || message.type === 'agent_thinking' || message.type === 'agent_activity') {
                     const now = Date.now();

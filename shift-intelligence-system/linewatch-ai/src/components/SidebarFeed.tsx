@@ -45,6 +45,10 @@ const LogItem: React.FC<{ log: string }> = ({ log }) => {
     if (log.includes('visual_signal')) {
         Icon = FaVideo;
         colorClass = "text-blue-700 bg-blue-50 border-blue-100";
+    } else if (log.includes('✅ Executed')) {
+        // Successful Agent Action
+        Icon = FaRobot;
+        colorClass = "text-emerald-700 bg-emerald-50 border-emerald-100 font-bold";
     } else if (log.includes('risk') || log.includes('CRITICAL')) {
         Icon = FaExclamationTriangle;
         colorClass = "text-red-700 bg-red-50 border-red-100";
