@@ -65,7 +65,7 @@ class BaseAgent(ABC):
         agent_name: str,
         system_prompt: str,
         tools: List[BaseTool],
-        use_flash_model: bool = True,
+        use_flash_model: bool = True,  # Deprecated, kept for signature compatibility
         thinking_level: str = "high",  # 'minimal', 'low', 'medium', 'high'
     ):
         """
@@ -75,7 +75,7 @@ class BaseAgent(ABC):
             agent_name: Unique identifier for agent
             system_prompt: Agent's system instructions
             tools: List of LangChain tools available to agent
-            use_flash_model: Use gemini-3.0-flash (fast) vs gemini-3.0-pro (smart)
+            use_flash_model: [Deprecated] Always uses settings.gemini_model
             thinking_level: Gemini 3 thinking depth - 'minimal', 'low', 'medium', 'high'
         """
         self.agent_name = agent_name
@@ -85,7 +85,9 @@ class BaseAgent(ABC):
         self.logger = get_agent_logger(agent_name)
         
         # Gemini 3 LLM with thinking configuration
-        model_name = "gemini-3-flash-preview"  # Downgrading everything to Flash as requested
+        # ALWAYS use the model defined in settings (Flash)
+        model_name = settings.gemini_model
+        
         self.llm = ChatGoogleGenerativeAI(
             model=model_name,
             google_api_key=settings.google_api_key,

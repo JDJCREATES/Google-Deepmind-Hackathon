@@ -65,8 +65,8 @@ from app.api.routers import simulation as sim_router
 from app.api.routers import human as human_router
 from app.api.routers import hypothesis as hypo_router
 from app.api.routers import graph as graph_router
-from app.api.routers import experiment as experiment_router
 from app.api.routers import learning as learning_router
+from app.api.routers import session as session_router
 
 app.include_router(sim_router.router, prefix="/api")
 app.include_router(human_router.router, prefix="/api")
@@ -74,6 +74,7 @@ app.include_router(hypo_router.router, prefix="/api")
 app.include_router(graph_router.router)
 app.include_router(experiment_router.router, prefix="/api")
 app.include_router(learning_router.router, prefix="/api")
+app.include_router(session_router.router)
 
 
 @app.get("/")

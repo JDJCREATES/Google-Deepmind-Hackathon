@@ -157,6 +157,9 @@ class StrategicMemory:
             CREATE TABLE IF NOT EXISTS policy_evolution (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 version TEXT,
+                description TEXT,
+                trigger_event TEXT,
+                changes TEXT,
                 confidence_threshold_act REAL,
                 confidence_threshold_escalate REAL,
                 framework_weights TEXT,
@@ -345,20 +348,39 @@ Use these learnings to inform your current analysis.
         framework_weights: Dict[str, float],
         policy_insights: List[str],
         incidents_evaluated: int,
-        accuracy_rate: float
+        accuracy_rate: float,
+        description: str = "",
+        trigger_event: str = "",
+        changes: List[str] = None
     ) -> None:
         """Save a policy evolution record."""
+        changes = changes or []
         async with aiosqlite.connect(self.db_path) as db:
             await self._ensure_tables(db)
             
+            # Simple migration: check if columns exist
+            try:
+                await db.execute("SELECT description FROM policy_evolution LIMIT 1")
+            except Exception:
+                # Add missing columns
+                logger.info("🔧 Migrating policy_evolution table...")
+                await db.execute("ALTER TABLE policy_evolution ADD COLUMN description TEXT")
+                await db.execute("ALTER TABLE policy_evolution ADD COLUMN trigger_event TEXT")
+                await db.execute("ALTER TABLE policy_evolution ADD COLUMN changes TEXT")
+                await db.commit()
+            
             await db.execute("""
                 INSERT INTO policy_evolution (
-                    version, confidence_threshold_act, confidence_threshold_escalate,
+                    version, description, trigger_event, changes,
+                    confidence_threshold_act, confidence_threshold_escalate,
                     framework_weights, policy_insights, incidents_evaluated,
                     accuracy_rate, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 version,
+                description,
+                trigger_event,
+                json.dumps(changes),
                 confidence_threshold_act,
                 confidence_threshold_escalate,
                 json.dumps(framework_weights),
@@ -385,8 +407,12 @@ Use these learnings to inform your current analysis.
             
             for row in rows:
                 record = dict(row)
-                record["framework_weights"] = json.loads(record["framework_weights"]) if record["framework_weights"] else {}
-                record["policy_insights"] = json.loads(record["policy_insights"]) if record["policy_insights"] else []
+                record["framework_weights"] = json.loads(record["framework_weights"]) if record.get("framework_weights") else {}
+                record["policy_insights"] = json.loads(record["policy_insights"]) if record.get("policy_insights") else []
+                record["changes"] = json.loads(record["changes"]) if record.get("changes") else []
+                # Fallbacks for existing records
+                if "description" not in record: record["description"] = f"Policy update {record['version']}"
+                if "trigger_event" not in record: record["trigger_event"] = "Accumulated suboptimal decisions"
                 records.append(record)
                 
         return records

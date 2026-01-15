@@ -927,8 +927,55 @@ async def evolve_policy_node(state: HypothesisMarketState) -> Dict[str, Any]:
     candidates = await strategic_memory.get_policy_update_candidates()
     stats = await strategic_memory.get_stats()
     
-    if len(candidates) >= 5:
-        logger.info(f"🔄 Policy evolution triggered! {len(candidates)} candidates, accuracy: {stats['accuracy_rate']:.1%}")
+    # Check if we should evolve
+    from app.reasoning.evolver import PolicyEvolver
+    evolver = PolicyEvolver(evolution_threshold=5) # Lower threshold for demo
+    
+    # Create dummy current policy if not in state (mocking for now since we don't persist policy in state yet)
+    current_policy = DecisionPolicy(
+        version="v1.0",
+        confidence_threshold_act=0.7,
+        confidence_threshold_escalate=0.4,
+        framework_weights={"RCA": 0.3, "TOC": 0.3, "FMEA": 0.2, "COUNTERFACTUAL": 0.2}
+    )
+    
+    # We use the evolver to check logic, but force it if we have candidates for the demo
+    should_evolve = await evolver.should_evolve(current_policy, strategic_memory)
+    
+    if should_evolve or len(candidates) >= 3: # Aggressive evolution for demo
+        logger.info(f"🔄 Policy evolution triggered! {len(candidates)} candidates")
+        
+        # 1. EVOLVE
+        new_policy = await evolver.evolve_policy(current_policy, strategic_memory)
+        
+        # 2. SAVE (Extracting meta-data from the evolution result)
+        # Note: evolver.evolve_policy returns the object, but we want to capture the *reasons*
+        # In a real impl, evolve_policy should return a rich result. 
+        # For now, we'll infer description/changes from the new policy diff
+        
+        changes = []
+        if new_policy.confidence_threshold_act != current_policy.confidence_threshold_act:
+            changes.append(f"Adjusted action threshold: {current_policy.confidence_threshold_act} -> {new_policy.confidence_threshold_act}")
+        if new_policy.confidence_threshold_escalate != current_policy.confidence_threshold_escalate:
+            changes.append(f"Adjusted escalation threshold: {current_policy.confidence_threshold_escalate} -> {new_policy.confidence_threshold_escalate}")
+        
+        # Add insights as changes
+        new_insights = [i for i in new_policy.policy_insights if i not in current_policy.policy_insights]
+        changes.extend(new_insights)
+        
+        # Save to DB
+        await strategic_memory.save_policy_evolution(
+            version=new_policy.version,
+            confidence_threshold_act=new_policy.confidence_threshold_act,
+            confidence_threshold_escalate=new_policy.confidence_threshold_escalate,
+            framework_weights=new_policy.framework_weights,
+            policy_insights=new_policy.policy_insights,
+            incidents_evaluated=len(await strategic_memory.get_all_replays()),
+            accuracy_rate=stats['accuracy_rate'],
+            description=f"Strategic adjustment based on {len(candidates)} counterfactuals",
+            trigger_event="Cumulative suboptimal decision patterns triggered evolution",
+            changes=changes
+        )
         
         # Broadcast learning event to frontend
         from app.services.websocket import manager
@@ -936,9 +983,8 @@ async def evolve_policy_node(state: HypothesisMarketState) -> Dict[str, Any]:
             "type": "learning_event",
             "data": {
                 "event": "policy_evolution_triggered",
-                "candidates": len(candidates),
-                "total_decisions": stats["total_replays"],
-                "accuracy_rate": stats["accuracy_rate"],
+                "version": new_policy.version,
+                "changes": changes,
                 "timestamp": datetime.now().isoformat()
             }
         })

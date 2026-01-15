@@ -37,6 +37,14 @@ interface AccuracyPeriod {
     cumulative_total: number;
 }
 
+interface PolicyHistory {
+    version: string;
+    description: string;
+    created_at: string;
+    trigger_event: string;
+    changes: string[];
+}
+
 export default function AnalyticsPage() {
   const [data, setData] = useState<any[]>([]);
   const [sessions, setSessions] = useState<ExperimentSession[]>([]);
@@ -47,6 +55,7 @@ export default function AnalyticsPage() {
   const [activeTab, setActiveTab] = useState<'experiment' | 'learning'>('experiment');
   const [learningStats, setLearningStats] = useState<LearningStats | null>(null);
   const [insights, setInsights] = useState<Insight[]>([]);
+  const [policyHistory, setPolicyHistory] = useState<PolicyHistory[]>([]);
   const [accuracyData, setAccuracyData] = useState<AccuracyPeriod[]>([]);
   const [learningLoading, setLearningLoading] = useState(false);
 
@@ -107,18 +116,21 @@ export default function AnalyticsPage() {
     const fetchLearningData = async () => {
         setLearningLoading(true);
         try {
-            const [statsRes, insightsRes, accuracyRes] = await Promise.all([
+            const [statsRes, insightsRes, historyRes, accuracyRes] = await Promise.all([
                 fetch('http://localhost:8000/api/learning/stats'),
                 fetch('http://localhost:8000/api/learning/insights'),
+                fetch('http://localhost:8000/api/learning/policy-history'),
                 fetch('http://localhost:8000/api/learning/accuracy-over-time'),
             ]);
             
             const stats = await statsRes.json();
             const insightsData = await insightsRes.json();
+            const historyData = await historyRes.json();
             const accuracy = await accuracyRes.json();
             
             setLearningStats(stats);
             setInsights(insightsData.insights || []);
+            setPolicyHistory(historyData.history || []);
             setAccuracyData(accuracy.periods || []);
         } catch (e) {
             console.error("Failed to fetch learning data", e);
@@ -395,6 +407,67 @@ export default function AnalyticsPage() {
                   </div>
               </div>
               
+              {/* POLICY EVOLUTION TIMELINE */}
+              <div className="bg-stone-900 border border-stone-800 rounded p-6 mb-6">
+                  <h3 className="text-sm font-bold text-stone-400 mb-6 font-mono uppercase flex items-center gap-2">
+                       <FaHistory className="text-cyan-400" /> Policy Evolution Timeline
+                  </h3>
+                  
+                  {policyHistory.length > 0 ? (
+                      <div className="relative border-l-2 border-stone-800 ml-3 space-y-8 pb-4">
+                          {policyHistory.slice().reverse().map((policy, idx) => (
+                              <div key={idx} className="relative pl-8">
+                                  {/* Dot */}
+                                  <div className={`absolute -left-[9px] top-0 w-4 h-4 rounded-full border-2 ${
+                                      idx === 0 ? 'bg-cyan-500 border-cyan-900 shadow-[0_0_10px_rgba(6,182,212,0.5)]' : 'bg-stone-800 border-stone-600'
+                                  }`}></div>
+                                  
+                                  {/* Content */}
+                                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                                      <div>
+                                          <div className="flex items-center gap-3 mb-1">
+                                              <span className={`px-2 py-0.5 rounded textxs font-bold font-mono ${
+                                                  idx === 0 ? 'bg-cyan-900/40 text-cyan-300' : 'bg-stone-800 text-stone-400'
+                                              }`}>
+                                                  {policy.version}
+                                              </span>
+                                              <span className="text-xs text-stone-500 font-mono">
+                                                  {new Date(policy.created_at).toLocaleString()}
+                                              </span>
+                                          </div>
+                                          <p className="text-stone-300 font-medium mb-2">{policy.description}</p>
+                                          
+                                          {/* Changes */}
+                                          {policy.changes && policy.changes.length > 0 && (
+                                              <div className="space-y-1">
+                                                  {policy.changes.map((change: string, cIdx: number) => (
+                                                      <div key={cIdx} className="flex items-start gap-2 text-sm text-stone-400">
+                                                          <span className="text-emerald-500 mt-1">●</span>
+                                                          <span>{change}</span>
+                                                      </div>
+                                                  ))}
+                                              </div>
+                                          )}
+                                      </div>
+                                      
+                                      {/* Reason */}
+                                      <div className="bg-stone-950/50 p-3 rounded border border-stone-800/50 max-w-sm">
+                                          <p className="text-[10px] text-stone-500 uppercase font-bold mb-1">Trigger Event</p>
+                                          <p className="text-xs text-stone-400 italic">"{policy.trigger_event}"</p>
+                                      </div>
+                                  </div>
+                              </div>
+                          ))}
+                      </div>
+                  ) : (
+                       <div className="h-32 flex items-center justify-center text-stone-500 text-sm border border-stone-800 border-dashed rounded">
+                           System is running on initial baseline policy (v1.0). 
+                           <br/>
+                           Policy updates occur automatically when decision accuracy drops below threshold.
+                       </div>
+                  )}
+              </div>
+
               {/* LEARNING EXPLANATION */}
               <div className="bg-gradient-to-r from-purple-950/50 to-stone-900 border border-purple-900/50 rounded p-6">
                   <h3 className="text-lg font-bold text-purple-300 mb-2 flex items-center gap-2">
