@@ -9,7 +9,7 @@ from typing import Dict, Any, List
 from app.agents.base import BaseAgent
 from app.prompts.maintenance.system import MAINTENANCE_AGENT_SYSTEM_PROMPT
 from app.tools.maintenance.dispatch_tools import dispatch_maintenance_crew
-from app.tools.maintenance import (
+from app.tools.maintenance.equipment_tools import (
     check_all_equipment_health,
     schedule_maintenance,
     create_work_order,

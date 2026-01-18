@@ -117,7 +117,9 @@ class ComplianceAgent(BaseAgent):
             ))
             
         # FMEA Hypothesis: Safety Risk
-        if any(w in signal_desc.lower() for w in ['guard', 'ppe', 'safety', 'smoke', 'fire']):
+        # Expanded keywords to catch equipment warnings and general hazards
+        trigger_words = ['guard', 'ppe', 'safety', 'smoke', 'fire', 'warning', 'risk', 'hazard', 'overheat', 'jam']
+        if any(w in signal_desc.lower() for w in trigger_words):
             hypotheses.append(create_hypothesis(
                 framework=HypothesisFramework.FMEA,
                 hypothesis_id=f"H-FMEA-{uuid4().hex[:6]}",

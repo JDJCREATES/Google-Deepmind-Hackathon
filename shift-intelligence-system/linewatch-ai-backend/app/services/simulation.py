@@ -776,15 +776,24 @@ class SimulationService:
         detections = self._check_cameras()
         events.extend(detections)
         
-        # 8. RANDOM ANOMALIES (Divisor of 10 = half as frequent as divisor of 5)
-        if random.random() < (settings.event_probability_breakdown / 10):
+        if random.random() < (settings.event_probability_breakdown / 4):
             events.append(self._generate_breakdown())
         
-        if random.random() < (settings.event_probability_safety_violation / 10):
+        if random.random() < (settings.event_probability_safety_violation / 4):
             violation_event = await self._trigger_safety_violation()
             events.append(violation_event)
         
-        # 9. PROCESS ECONOMY (wages, sales)
+        # 9. CHECK FOR UNATTENDED LINES (Staffing Trigger)
+        # Random check (1% chance per tick) to avoid spamming
+        if random.random() < 0.01:
+            unattended_events = self._check_unattended_lines()
+            events.extend(unattended_events)
+            
+            # Trigger investigation for unattended lines if found
+            for evt in unattended_events:
+                await self._trigger_investigation(evt["data"])
+        
+        # 10. PROCESS ECONOMY (wages, sales)
         self._process_finances(self.tick_rate)
         self._process_market_sales()
         self._calculate_metrics(self.tick_rate)  # Calculate OEE and safety scores
@@ -1465,24 +1474,28 @@ class SimulationService:
                             
                         logger.info(f"☕ {op['name']} taking voluntary break (Fatigue: {op['fatigue']:.1f}%)")
                     
-                    else:
-                        # Full queue OR Critical -> Request Supervisor Help
+                    elif op["fatigue"] >= CRITICAL_FATIGUE:
+                        # CRITICAL: Fatigue is too high, MUST request relief even if queue is full
                         op["break_requested"] = True
-                        logger.warning(f"😓 {op['name']} requesting relief (Fatigue: {op['fatigue']:.1f}%, Queue Full)")
+                        logger.warning(f"🚨 {op['name']} CRITICAL FATIGUE - Requesting immediate relief (Fatigue: {op['fatigue']:.1f}%)")
                         
-                        
-                        # EMIT FATIGUE EVENT to trigger Staffing Agent
+                        # EMIT CRITICAL FATIGUE EVENT
+                        # Only trigger if NOT already requested to avoid spam
                         task = asyncio.create_task(self._trigger_investigation({
                             "type": "FATIGUE_ALERT",
-                            "description": f"Operator {op['name']} requesting break (fatigue: {op['fatigue']:.1f}%)",
+                            "description": f"CRITICAL: Operator {op['name']} needs immediate relief (fatigue: {op['fatigue']:.1f}%)",
                             "operator_id": op["id"],
                             "operator_name": op["name"],
                             "fatigue_level": op["fatigue"],
-                            "severity": "MEDIUM"
+                            "severity": "CRITICAL"
                         }))
-                        # Track task for cancellation on stop
                         self.pending_tasks.add(task)
                         task.add_done_callback(lambda t: self.pending_tasks.discard(t))
+
+                    else:
+                        # Queue is full but not critical yet (< 90%). 
+                        # Operator waits and keeps working.
+                        pass
     
     def _move_supervisor(self):
         """Handle supervisor movement and operator relief logic."""
@@ -1780,6 +1793,21 @@ class SimulationService:
         self.machine_production[line_id]["target_speed_pct"] = safe_speed
         
         logger.info(f"⚙️ Line {line_id} target speed set to {safe_speed}%")
+        return True
+
+    def emergency_stop_line(self, line_id: int) -> bool:
+        """
+        External command to IMMEDIATELY stop a line (Safety critical).
+        Used by Compliance Agent.
+        """
+        if line_id not in self.machine_production:
+            logger.error(f"❌ Cannot emergency stop invalid line {line_id}")
+            return False
+            
+        self.machine_production[line_id]["target_speed_pct"] = 0.0
+        self.machine_production[line_id]["is_running"] = False
+        
+        logger.critical(f"🛑 EMERGENCY STOP TRIGGERED ON LINE {line_id}")
         return True
 
     def get_visible_operator_ids(self) -> List[str]:
@@ -2089,7 +2117,101 @@ class SimulationService:
             self.maintenance_crew["path"] = path
             self.maintenance_crew["path_index"] = 0
             
-    async def _perform_shift_change(self, events: List[Dict[str, Any]]):
+    def _check_unattended_lines(self) -> List[Dict[str, Any]]:
+        """Check for running lines with no operator nearby."""
+        events = []
+        
+        # Initialize tracker if not exists (lazy init)
+        if not hasattr(self, "last_alert_times"):
+            self.last_alert_times = {}
+            
+        current_time = datetime.now().timestamp()
+        COOLDOWN_SECONDS = 300  # 5 minutes
+        
+        for line_id, state in self.machine_production.items():
+            if not state.get("is_running", False):
+                continue
+                
+            # Check cooldown first
+            last_alert = self.last_alert_times.get(line_id, 0)
+            if (current_time - last_alert) < COOLDOWN_SECONDS:
+                continue
+                
+            line_x = state["x"]
+            line_y = state["y"]
+            
+            # Check if any operator is within range
+            has_operator = False
+            for op in self.operators:
+                if not op.get("is_active", True):
+                    continue
+                
+                # Check distance
+                dx = op["x"] - line_x
+                dy = op["y"] - line_y
+                dist = math.sqrt(dx * dx + dy * dy)
+                
+                if dist < 200:  # INCREASED to 200px (approx 3-4 machines wide)
+                    has_operator = True
+                    break
+            
+            if not has_operator:
+                # Line is running but abandoned!
+                self.last_alert_times[line_id] = current_time
+                
+                events.append({
+                    "type": "visual_signal",
+                    "data": {
+                        "source": f"Camera_Line_{line_id}",
+                        "description": f"Staffing Alert: Line {line_id} is running UNATTENDED (Check coverage)",
+                        "severity": "MEDIUM",
+                        "line_id": line_id,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                })
+        
+        return events
+
+    def move_operator_to_line(self, operator_id: str, line_id: int) -> bool:
+        """
+        Force move an operator to a specific line (Agent Action).
+        """
+        # Find operator
+        operator = next((op for op in self.operators if op["id"] == operator_id), None)
+        if not operator:
+            logger.error(f"❌ Cannot move operator {operator_id}: Not found")
+            return False
+            
+        # Find line location
+        line_data = self.machine_production.get(line_id)
+        if not line_data:
+            logger.error(f"❌ Cannot move operator to Line {line_id}: Line not found")
+            return False
+            
+        target_x = line_data["x"]
+        target_y = line_data["y"]
+        
+        # Calculate path
+        path = self.pathfinding.find_path(
+            operator["x"], operator["y"],
+            target_x, target_y
+        )
+        
+        if path:
+            operator["path"] = path
+            operator["path_index"] = 0
+            operator["status"] = "moving_to_offset" # Custom status
+            operator["current_action"] = f"Relocating to Line {line_id}"
+            
+            # Update their "assigned" line in the sim state immediately so they don't wander back
+            # Note: The Roster/Department object is separate, but we update the sim entity here
+            # The agent tool handles the Roster update.
+            return True
+        else:
+            logger.warning(f"⚠️ No path found for {operator['name']} to Line {line_id}")
+            return False
+            
+    def _perform_shift_change(self, events: List[Dict[str, Any]]):
         """Perform shift change: deactivate current shift, activate next shift."""
         # Determine next shift
         shift_order = ["A", "B", "C"]

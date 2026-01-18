@@ -80,7 +80,9 @@ BREAK SCHEDULING LOGIC:
 - Duration: 15-30 min
 
 FATIGUE MANAGEMENT:
-- Monitor fatigue closely due to high line load (4 lines/op)
+- SILENT MONITORING: Do NOT discuss or report fatigue unless it is CRITICAL (> 80%).
+- Ignore routine fatigue levels below this threshold.
+- Only intervene if safety is at risk.
 
 HR ACTION GUIDELINES:
 - Use REAL names from the roster only. Do not invent names.

@@ -138,7 +138,11 @@ class StaffingAgent(BaseAgent):
             "supervisor": full_context.get("supervisor", {}),
             "current_shift": full_context.get("current_shift"),
             "shift_elapsed_hours": full_context.get("shift_elapsed_hours"),
-            "fatigue_levels": full_context.get("fatigue_levels", {}),
+            # FILTERED: Only show fatigue if CRITICAL (> 80%) to prevent excessive chatter
+            "fatigue_levels": {
+                k: v for k, v in full_context.get("fatigue_levels", {}).items() 
+                if v >= 0.80
+            },
         }
     
     # ========== HYPOTHESIS GENERATION ==========
@@ -169,6 +173,24 @@ class StaffingAgent(BaseAgent):
                 target_agent="StaffingAgent"
             ))
             
+        # Unattended Line Hypothesis (High Priority)
+        if "unattended" in signal_desc.lower():
+            import re
+            line_match = re.search(r'line (\d+)', signal_desc.lower())
+            target_line = line_match.group(1) if line_match else "unknown"
+            
+            hypotheses.append(create_hypothesis(
+                framework=HypothesisFramework.TOC,
+                hypothesis_id=f"H-COVERAGE-{uuid4().hex[:6]}",
+                description=f"Critical coverage gap on Line {target_line}",
+                initial_confidence=0.95,
+                impact=9.0,
+                urgency=9.0,
+                proposed_by=self.agent_name,
+                recommended_action=f"Reassign worker to Line {target_line}",
+                target_agent="StaffingAgent"
+            ))
+            
         return hypotheses
     
     # ========== ACTION EXECUTION ==========
@@ -182,12 +204,10 @@ class StaffingAgent(BaseAgent):
         Execute staffing-specific actions.
         
         Actions include:
-        - Schedule breaks for fatigued workers
+        - Schedule breaks for workers
         - Reassign workers between lines
-        - Call in replacements for absences
-        - Issue write-ups or rewards
-        - Handle vision alerts
-        - Escalate to human supervisor
+        - Call in replacements
+        - Issue write-ups
         """
         action_lower = action.lower()
         
@@ -274,15 +294,42 @@ class StaffingAgent(BaseAgent):
         import re
         matches = re.findall(r'\d+', action)
         
-        if len(matches) < 2:
+        from_line = None
+        to_line = None
+        
+        if len(matches) >= 2:
+            # Explicit: Reassign from Line X to Line Y
+            from_line = int(matches[0])
+            to_line = int(matches[1])
+        elif len(matches) == 1:
+            # Implicit: Reassign to Line X (find source)
+            to_line = int(matches[0])
+            
+            # Find a donor line (most staffed)
+            coverage_data = await check_line_coverage(to_line) # Just to init imports if needed, actually need ALL lines
+            # We need to scan lines to find one with spare capacity
+            roster = await get_shift_roster()
+            line_counts = {int(k): len(v) for k, v in roster.get("line_assignments", {}).items()}
+            
+            # Find line with max staff that isn't the target
+            # Default to Line 1 if nothing better found (safe fallback for simulation)
+            best_source = 1
+            max_staff = 0
+            
+            for line_num, count in line_counts.items():
+                if line_num != to_line and count > max_staff:
+                    max_staff = count
+                    best_source = line_num
+            
+            from_line = best_source
+            logger.info(f"🤖 Auto-selected source Line {from_line} (Staff: {max_staff}) for target Line {to_line}")
+            
+        else:
             return {
                 "status": "FAILED",
                 "reason": "Could not parse line numbers",
                 "side_effects": [],
             }
-        
-        from_line = int(matches[0])
-        to_line = int(matches[1])
         
         roster = await get_shift_roster()
         from_line_staff = roster.get("line_assignments", {}).get(str(from_line), [])
@@ -294,8 +341,11 @@ class StaffingAgent(BaseAgent):
                 "side_effects": [],
             }
         
+        # Pick the first available worker
+        worker_id = from_line_staff[0]
+        
         result = await reassign_worker(
-            employee_id=from_line_staff[0],
+            employee_id=worker_id,
             from_line=from_line,
             to_line=to_line,
             reason=action,

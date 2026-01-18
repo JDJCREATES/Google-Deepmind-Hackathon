@@ -347,7 +347,8 @@ async def trigger_safety_alarm(
     Trigger safety alarm for critical situations.
     
     Activates alarm system for dangerous violations requiring
-    immediate attention. Creates high-priority alert in system.
+    immediate attention. Creates high-priority alert in system
+    AND stops the affected production line.
     
     Args:
         violation_id: Violation triggering alarm
@@ -359,6 +360,15 @@ async def trigger_safety_alarm(
     logger.warning(f"🚨 SAFETY ALARM TRIGGERED: {violation_id}")
     
     try:
+        # Get violation to find line number
+        violations = await shared_context.safety_violations
+        violation = next(
+            (v for v in violations if v.violation_id == violation_id),
+            None
+        )
+        
+        line_number = violation.line_number if violation else None
+        
         # Create critical alert
         alert = Alert(
             alert_id=f"ALARM-{violation_id}",
@@ -367,17 +377,17 @@ async def trigger_safety_alarm(
             source="ComplianceAgent",
             title=f"SAFETY ALARM: {violation_id}",
             description=message,
-            line_number=None,  # Would extract from violation
+            line_number=line_number,
             resolved=False,
         )
         
         await shared_context.add_alert(alert)
         
-        # In production, would:
-        # - Activate physical alarm systems
-        # - Send SMS/page to safety personnel
-        # - Auto-notify emergency services if needed
-        # - Halt affected production lines
+        sim_status = "Simulation not connected"
+        if line_number:
+            from app.services.simulation import simulation
+            stopped = simulation.emergency_stop_line(line_number)
+            sim_status = "Line STOPPED via Simulation" if stopped else "Failed to stop line"
         
         result = {
             "alarm_id": alert.alert_id,
@@ -385,16 +395,17 @@ async def trigger_safety_alarm(
             "message": message,
             "triggered_at": alert.timestamp.isoformat(),
             "severity": "CRITICAL",
+            "simulation_action": sim_status,
             "response_protocol": [
                 "Safety personnel dispatched",
                 "Line supervisor notified",
-                "Production halt on affected line",
+                f"Production halt on Line {line_number}" if line_number else "Production halt requested",
                 "Incident logged for investigation",
             ],
             "estimated_response_time": "< 2 minutes",
         }
         
-        logger.warning(f"🚨 Alarm {alert.alert_id} activated")
+        logger.warning(f"🚨 Alarm {alert.alert_id} activated - {sim_status}")
         
         return result
         

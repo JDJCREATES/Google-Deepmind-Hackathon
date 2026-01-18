@@ -498,6 +498,11 @@ async def reassign_worker(
         if to_line_obj:
             to_line_obj.assigned_staff.append(employee_id)
         
+        # TRIGGER SIMULATION MOVEMENT
+        from app.services.simulation import simulation
+        sim_moved = simulation.move_operator_to_line(employee_id, to_line)
+        sim_note = "Moving to new line" if sim_moved else "Simulation move failed (path not found)"
+        
         result = {
             "status": "SUCCESS",
             "employee_id": employee_id,
@@ -507,11 +512,12 @@ async def reassign_worker(
             "reason": reason,
             "from_line_remaining_count": from_coverage["visual_count"] - 1,
             "to_line_new_count": to_coverage["visual_count"] + 1,
+            "simulation_status": sim_note, # Added for debugging
             "timestamp": datetime.now().isoformat(),
         }
         
         logger.info(
-            f"✅ Worker reassigned: {employee_id} now on Line {to_line}"
+            f"✅ Worker reassigned: {employee_id} now on Line {to_line} ({sim_note})"
         )
         
         return result
