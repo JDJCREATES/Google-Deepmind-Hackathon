@@ -450,8 +450,8 @@ async def gather_evidence_node(state: HypothesisMarketState) -> Dict[str, Any]:
         await manager.broadcast({
             "type": "agent_action",
             "data": {
-                "agent": "MasterOrchestrator",
-                "actions": [f"Delegating verification to {agent_name}: {verification_plan.get('reasoning', 'Standard check')[:100]}..."],
+                "agent": agent_name,
+                "actions": [f"Verifying hypothesis: {verification_plan.get('reasoning', 'Standard check')[:100]}..."],
                 "timestamp": datetime.now().isoformat()
             }
         })

@@ -136,6 +136,10 @@ class ProductionAgent(BaseAgent):
                 target_agent="ProductionAgent"
             ))
             
+        # Fallback to LLM reasoning if heuristics miss
+        if not hypotheses:
+            return await super().generate_hypotheses(signal)
+            
         return hypotheses
 
     # ========== SPECIALIZED ACTION EXECUTION ==========

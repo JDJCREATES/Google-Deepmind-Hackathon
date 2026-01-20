@@ -191,6 +191,10 @@ class StaffingAgent(BaseAgent):
                 target_agent="StaffingAgent"
             ))
             
+        # Fallback to LLM reasoning if heuristics miss
+        if not hypotheses:
+            return await super().generate_hypotheses(signal)
+            
         return hypotheses
     
     # ========== ACTION EXECUTION ==========

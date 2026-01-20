@@ -807,19 +807,70 @@ class BaseAgent(ABC):
         """
         from app.hypothesis import create_hypothesis, Hypothesis
         
-        prompt = f"""
-        As the {self.agent_name}, generate hypotheses for this signal:
-        Signal: {signal.get('description')}
-        Data: {signal.get('data')}
+        # Default implementation: Use LLM to generate hypotheses if heuristics aren't overridden
+        # or if the subclass calls super().generate_hypotheses()
         
-        Generate 1-2 hypotheses specific to your domain expertise.
+        from app.hypothesis import create_hypothesis, HypothesisFramework
+        from uuid import uuid4
+        
+        prompt = f"""
+        As the {self.agent_name}, identify if this signal is relevant to your domain.
+        
+        SIGNAL: {signal.get('description')}
+        DATA: {signal.get('data')}
+        
+        If relevant, generate 1 hypothesis.
+        If NOT relevant, return "IRRELEVANT".
+        
+        Format:
+        Hypothesis: <description>
+        Confidence: <0.0-1.0>
+        Framework: <RCA|TOC|OE|DOE>
+        Action: <recommended action>
         """
         
-        # This is a basic implementation - subclasses should override or
-        # we can implement a generic one here using self.llm
-        # For the hackathon, we'll keep it simple in the base and override in subclasses
-        # where we want specific framework logic.
-        return []
+        try:
+            response = await self.llm.ainvoke(prompt)
+            content = response.content
+            
+            if "IRRELEVANT" in content:
+                self.logger.info(f"Signal deemed irrelevant by {self.agent_name}")
+                return []
+                
+            # Simple parsing (robust enough for fallback)
+            desc = "Investigation needed"
+            conf = 0.5
+            framework = HypothesisFramework.RCA
+            action = "Investigate"
+            
+            for line in content.split('\n'):
+                if line.startswith("Hypothesis:"): desc = line.split(":", 1)[1].strip()
+                if line.startswith("Confidence:"): 
+                    try: conf = float(line.split(":", 1)[1].strip())
+                    except: pass
+                if line.startswith("Framework:"):
+                    f_str = line.split(":", 1)[1].strip().upper()
+                    if "TOC" in f_str: framework = HypothesisFramework.TOC
+                    elif "OE" in f_str: framework = HypothesisFramework.OE
+                    elif "DOE" in f_str: framework = HypothesisFramework.DOE
+                if line.startswith("Action:"): action = line.split(":", 1)[1].strip()
+            
+            h = create_hypothesis(
+                framework=framework,
+                hypothesis_id=f"H-GEN-{uuid4().hex[:6]}",
+                description=desc,
+                initial_confidence=conf,
+                impact=5.0,
+                urgency=5.0,
+                proposed_by=self.agent_name,
+                recommended_action=action,
+                target_agent=self.agent_name
+            )
+            return [h]
+            
+        except Exception as e:
+            self.logger.error(f"Fallback hypothesis generation failed: {e}")
+            return []
     
     # ========== HELPER METHODS ==========
     

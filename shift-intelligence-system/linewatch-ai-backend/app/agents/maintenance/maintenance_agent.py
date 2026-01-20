@@ -121,6 +121,11 @@ class MaintenanceAgent(BaseAgent):
                 target_agent="MaintenanceAgent"
             ))
             
+            
+        # Fallback to LLM reasoning if heuristics miss
+        if not hypotheses:
+            return await super().generate_hypotheses(signal)
+            
         return hypotheses
     
     async def _execute_action(self, action: str, context: Dict[str, Any]) -> Dict[str, Any]:

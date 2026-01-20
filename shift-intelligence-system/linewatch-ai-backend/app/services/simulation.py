@@ -2073,13 +2073,19 @@ class SimulationService:
                 }
             })
             
-            # Pass simulation reference to allow checking if still running
-            await run_hypothesis_market(
-                signal_id=f"sim-{int(datetime.now().timestamp())}",
-                signal_type=event_data.get("type", "UNKNOWN"),
-                signal_description=event_data.get("description", "Simulation Event"),
-                signal_data=event_data
+            # FIX: Run as background task to avoid blocking simulation loop
+            task = asyncio.create_task(
+                run_hypothesis_market(
+                    signal_id=f"sim-{int(datetime.now().timestamp())}",
+                    signal_type=event_data.get("type", "UNKNOWN"),
+                    signal_description=event_data.get("description", "Simulation Event"),
+                    signal_data=event_data
+                )
             )
+            
+            # Track task for cleanup
+            self.pending_tasks.add(task)
+            task.add_done_callback(self.pending_tasks.discard)
         except Exception as e:
             # Suppress errors if simulation stopped during investigation
             if self.is_running:
