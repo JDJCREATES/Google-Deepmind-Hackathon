@@ -207,7 +207,7 @@ Select at least 2 relevant frameworks.
             await manager.broadcast({
                 "type": "agent_thinking",
                 "data": {
-                    "agent": "hypothesis_market",
+                    "agent": "orchestrator",
                     "thought": thinking[:300],
                     "timestamp": datetime.now().isoformat()
                 }
@@ -265,15 +265,18 @@ async def generate_hypotheses_node(state: HypothesisMarketState) -> Dict[str, An
     # Broadcast start of hypothesis generation
     from app.services.websocket import manager
     
-    # 1. Orchestrator Announcement
-    await manager.broadcast({
-        "type": "agent_action",
-        "data": {
-            "agent": "MasterOrchestrator",
-            "actions": ["Convening specialist agents for hypothesis generation..."],
-            "timestamp": datetime.now().isoformat()
-        }
-    })
+    
+    # SPAM FIX: Removed "Convening specialist agents" broadcast
+    # This was showing up dozens of times per investigation
+    # await manager.broadcast({
+    #     "type": "agent_action",
+    #     "data": {
+    #         "agent": "orchestrator",
+    #         "actions": ["Convening specialist agents for hypothesis generation..."],
+    #         "timestamp": datetime.now().isoformat()
+    #     }
+    # })
+
 
     await manager.broadcast({
         "type": "reasoning_phase",
@@ -300,14 +303,45 @@ async def generate_hypotheses_node(state: HypothesisMarketState) -> Dict[str, An
     
     hypotheses = []
     
-    # 1. Get cached agent instances (PERFORMANCE: Avoids re-initialization overhead)
-    # Previously created new instances each cycle, costing ~2-3s latency per agent
-    agents = [
-        get_cached_agent(ProductionAgent),
-        get_cached_agent(StaffingAgent),
-        get_cached_agent(ComplianceAgent),
-        get_cached_agent(MaintenanceAgent)
-    ]
+    # CRITICAL FIX: Select only RELEVANT agents based on event type
+    def select_agents_by_event(description: str) -> list[str]:
+        """Keyword-based agent selection - only call agents relevant to the event."""
+        desc_lower = description.lower()
+        
+        # Mechanical failures → Maintenance only
+        if any(w in desc_lower for w in ["cylinder", "breakdown", "jam", "mechanical", "stuck", "belt"]):
+            return ["Maintenance"]
+        
+        # Safety events → Compliance + Production (for shutdown)
+        elif any(w in desc_lower for w in ["smoke", "fire", "safety", "violation", "alarm", "restricted"]):
+            return ["Compliance", "Production"]
+        
+        # Quality issues → Production + Compliance
+        elif any(w in desc_lower for w in ["defect", "quality", "scrap", "rejection", "variance"]):
+            return ["Production", "Compliance"]
+        
+        # Workforce issues → Staffing only
+        elif any(w in desc_lower for w in ["fatigue", "staffing", "operator", "shift", "break"]):
+            return ["Staffing"]
+        
+        # Default: Production + Maintenance (most common)
+        else:
+            return ["Production", "Maintenance"]
+    
+    # Select relevant agents based on event description
+    selected_agent_names = select_agents_by_event(signal["description"])
+    logger.info(f"🎯 Selected agents for investigation: {selected_agent_names}")
+    
+    # 1. Map agent names to instances
+    agent_map = {
+        "Production": get_cached_agent(ProductionAgent),
+        "Staffing": get_cached_agent(StaffingAgent),
+        "Compliance": get_cached_agent(ComplianceAgent),
+        "Maintenance": get_cached_agent(MaintenanceAgent)
+    }
+    
+    # 2. Get only the relevant agents
+    agents = [agent_map[name] for name in selected_agent_names if name in agent_map]
     
     # 2. Solicit hypotheses from all agents in parallel
     import asyncio
@@ -401,6 +435,7 @@ async def gather_evidence_node(state: HypothesisMarketState) -> Dict[str, Any]:
     
     hypotheses = state.get("hypotheses", [])
     evidence_list = []
+    global_evidence = state.get("evidence", [])
     
     # Simulate tool execution (Mock Engine)
     def simulate_tool_output(tool_name: str, params: Dict, hypothesis_desc: str) -> Dict[str, Any]:
@@ -441,30 +476,99 @@ async def gather_evidence_node(state: HypothesisMarketState) -> Dict[str, Any]:
         agent_name = hypothesis.proposed_by or "ProductionAgent"
         agent = agent_map.get(agent_name, agent_map["ProductionAgent"])
         
+        # 0. SMART CONTEXT INJECTION
+        # Filter global evidence to only show items relevant to THIS hypothesis
+        relevant_evidence = [
+            e for e in global_evidence 
+            if e.hypothesis_id == hypothesis.hypothesis_id
+        ]
+        
+        # Build set of existing signatures for this hypothesis to prevent loops
+        existing_signatures = {e.signature for e in relevant_evidence}
+        
         # 1. Ask agent to propose verification (SILENTLY)
         # We broadcast a managed Orchestrator log instead
-        verification_plan = await agent.propose_verification(hypothesis, silence=True)
-        
-        # Managed log broadcast
-        from app.services.websocket import manager
-        await manager.broadcast({
-            "type": "agent_action",
-            "data": {
-                "agent": agent_name,
-                "actions": [f"Verifying hypothesis: {verification_plan.get('reasoning', 'Standard check')[:100]}..."],
-                "timestamp": datetime.now().isoformat()
-            }
-        })
+        verification_plan = await agent.propose_verification(
+            hypothesis, 
+            silence=True,
+            existing_evidence=relevant_evidence
+        )
         
         tool_name = verification_plan.get("tool", "manual_check")
         rationale = verification_plan.get("reasoning", "Standard verification")
         params = verification_plan.get("params", {})
         
-        # 2. "Execute" the tool (Simulated)
-        sim_result = simulate_tool_output(tool_name, params, hypothesis.description)
+        # DEDUPLICATION CHECK
+        import json
+        params_str = json.dumps(params, sort_keys=True)
+        current_signature = f"{tool_name}:{params_str}"
         
-        # 3. Create Evidence object
+        if current_signature in existing_signatures:
+            logger.info(f"🚫 Skipping duplicate tool '{tool_name}' for {hypothesis.hypothesis_id}")
+            return None # Skip execution
+            
+        if "verify_complete" in tool_name:
+             logger.info(f"✅ Verification complete for {hypothesis.hypothesis_id}")
+             return None
+        
+        # Managed log broadcast
+        from app.services.websocket import manager
+        # Normalize agent name: remove "Agent" suffix and lowercase
+        normalized_agent = agent_name.replace("Agent", "").replace("Master", "").lower()
+        if normalized_agent == "orchestrator":
+            normalized_agent = "orchestrator"
+        
+        # 1. Broadcast THINKING first (for thought bubble visualization)
+        await manager.broadcast({
+            "type": "agent_thinking",
+            "data": {
+                "agent": normalized_agent,
+                "thought": rationale[:180],  # Show reasoning in thought bubble
+                "timestamp": datetime.now().isoformat()
+            }
+        })
+        
+        # 2. Broadcast ACTION (for logs)
+        await manager.broadcast({
+            "type": "agent_action",
+            "data": {
+                "agent": normalized_agent,
+                "actions": [f"Verifying hypothesis: {rationale[:100]}..."],
+                "timestamp": datetime.now().isoformat()
+            }
+        })
+        
+        # 2. Execute REAL tool (query actual simulation state)
+        from app.tools.analysis.metrics_tools import (
+            get_line_health, get_oee_metrics, get_line_output, 
+            get_crew_status, get_sensor_reading
+        )
+        
+        # Map tool names to real functions
+        TOOL_REGISTRY = {
+            "inspect_machine": lambda p: get_line_health(p.get("line_id", 1)),
+            "check_line_health": lambda p: get_line_health(p.get("line_id", 1)),
+            "query_logs": lambda p: get_oee_metrics(),
+            "check_sensors": lambda p: get_sensor_reading(p.get("sensor_type", "pressure")),
+            "get_crew_location": lambda p: get_crew_status(),
+            "check_schedule": lambda p: get_oee_metrics(),
+            "review_camera": lambda p: get_sensor_reading("visual"),
+        }
+        
+        # Execute real tool or fallback
+        if tool_name in TOOL_REGISTRY:
+            try:
+                sim_result = TOOL_REGISTRY[tool_name](params)
+                logger.debug(f"✅ Real tool '{tool_name}' returned: {sim_result}")
+            except Exception as e:
+                logger.error(f"Real tool '{tool_name}' failed: {e}, using fallback")
+                sim_result = simulate_tool_output(tool_name, params, hypothesis.description)
+        else:
+            sim_result = simulate_tool_output(tool_name, params, hypothesis.description)
+        
+        # 3. Create Evidence object with REAL data
         evidence = Evidence(
+            hypothesis_id=hypothesis.hypothesis_id, # Link back to hypothesis
             source=f"{tool_name}",
             data={
                 "tool": tool_name,
@@ -481,7 +585,7 @@ async def gather_evidence_node(state: HypothesisMarketState) -> Dict[str, Any]:
         await manager.broadcast({
             "type": "tool_execution",
             "data": {
-                "agent": agent_name,
+                "agent": normalized_agent,
                 "tool": tool_name,
                 "rationale": rationale,
                 "result": sim_result,
@@ -491,17 +595,20 @@ async def gather_evidence_node(state: HypothesisMarketState) -> Dict[str, Any]:
         
         return evidence
 
-    # Execute all verifications in parallel
+    # CRITICAL FIX: Execute agents SEQUENTIALLY (one at a time, not parallel)
+    # Previous asyncio.gather() caused all agents to broadcast simultaneously = chaos
     import asyncio
-    verification_tasks = [verify_hypothesis(h) for h in hypotheses]
-    gathered_evidence = await asyncio.gather(*verification_tasks, return_exceptions=True)
     
-    # Process results
-    for res in gathered_evidence:
-        if isinstance(res, Evidence):
-            evidence_list.append(res)
-        elif isinstance(res, Exception):
-            logger.error(f"Evidence gathering failed: {res}")
+    logger.info(f"🔍 Verifying {len(hypotheses)} hypotheses sequentially...")
+    
+    for i, hypothesis in enumerate(hypotheses, 1):
+        try:
+            logger.debug(f"  [{i}/{len(hypotheses)}] Verifying: {hypothesis.description[:60]}...")
+            evidence = await verify_hypothesis(hypothesis)
+            if isinstance(evidence, Evidence):
+                evidence_list.append(evidence)
+        except Exception as e:
+            logger.error(f"Evidence gathering failed for hypothesis {i}: {e}")
             
     logger.info(f"✅ Gathered {len(evidence_list)} pieces of dynamic evidence")
     
@@ -567,7 +674,7 @@ Output the detailed calculations and final posteriors according to the schema.
             await manager.broadcast({
                 "type": "agent_thinking",
                 "data": {
-                    "agent": "hypothesis_market",
+                    "agent": "orchestrator",
                     "thought": thinking[:300],
                     "timestamp": datetime.now().isoformat()
                 }
@@ -629,7 +736,8 @@ Output the detailed calculations and final posteriors according to the schema.
         "belief_state": belief_state,
         "converged": converged,
         "iteration": state.get("iteration", 0) + 1,
-        "thought_signature": new_sig
+        "thought_signature": new_sig,
+        "last_evidence_count": len(evidence)  # Track for stagnation detection
     }
 
 
@@ -661,6 +769,20 @@ async def select_action_node(state: HypothesisMarketState) -> Dict[str, Any]:
     reasoning = verdict.get("reasoning")
     
     logger.info(f"👨‍⚖️ Orchestrator Verdict: {action} ({reasoning[:50]}...)")
+    
+    # Broadcast Verdict
+    from app.services.websocket import manager
+    await manager.broadcast({
+        "type": "agent_action",
+        "data": {
+            "agent": "orchestrator",
+            "actions": [
+                f"⚖️ Verdict: {action}",
+                f"Reasoning: {reasoning}"
+            ],
+            "timestamp": datetime.now().isoformat()
+        }
+    })
     
     # Check if we need human escalation based on Orchestrator's verdict
     if action == "ESCALATE_TO_HUMAN":
@@ -768,7 +890,22 @@ async def execute_action_node(state: HypothesisMarketState) -> Dict[str, Any]:
                  "outcome": "Emergency Evacuation Protocol Initiated. All staff moving to Assembly Point."
              }
 
-        # 6. Suspend Lines (Operational Safety)
+
+        # 6. Lift Evacuation (Return to Work)
+        elif "lift evacuation" in action.lower() or "all clear" in action.lower() or "return to work" in action.lower():
+             from app.services.simulation import simulation
+             await simulation.lift_evacuation()
+             
+             logger.info("✅ ACTION EXECUTED: Evacuation Lifted - All Clear")
+             
+             result = {
+                 "success": True,
+                 "action": action,
+                 "executed_at": datetime.now().isoformat(),
+                 "outcome": "Evacuation lifted. Personnel returning to stations."
+             }
+
+        # 7. Suspend Lines (Operational Safety)
         elif "suspend line" in action.lower() or "stop line" in action.lower():
              from app.services.simulation import simulation
              # Stop all lines (without moving people)
@@ -816,21 +953,42 @@ async def execute_action_node(state: HypothesisMarketState) -> Dict[str, Any]:
     
     logger.info(f"✅ Action executed: {result['outcome']}")
     
-    # Broadcast SUCCESSFUL action to frontend
+    # Broadcast detailed tool execution event (for debugging/details)
     try:
         from app.services.websocket import manager
+        
+        # Determine likely agent based on action words
+        agent_broadcaster = "production"
+        if "maintenance" in action.lower(): agent_broadcaster = "maintenance"
+        elif "staff" in action.lower() or "roster" in action.lower(): agent_broadcaster = "staffing"
+        elif "safety" in action.lower(): agent_broadcaster = "compliance"
+        elif "evacuate" in action.lower(): agent_broadcaster = "orchestrator"
+        
+        await manager.broadcast({
+            "type": "tool_execution",
+            "data": {
+                "agent": agent_broadcaster,
+                "tool": action,
+                "rationale": "Execution of selected hypothesis action",
+                "result": result,
+                "timestamp": datetime.now().isoformat()
+            }
+        })
+        
+        # Also send a public notification for the timeline
         await manager.broadcast({
             "type": "agent_action",
             "data": {
-                "agent": "ORCHESTRATOR", # Action node runs under orchestrator authority
-                "actions": [f"✅ Executed: {result['action']}", f"Result: {result['outcome']}"],
+                "agent": agent_broadcaster,
+                "actions": [f"Executed: {action}", f"Outcome: {result['outcome']}"],
                 "timestamp": datetime.now().isoformat()
             }
         })
     except Exception as e:
-        logger.warning(f"Failed to broadcast action: {e}")
-    
+        logger.warning(f"Failed to broadcast action result: {e}")
+
     return {"action_result": result}
+
 
 
 async def counterfactual_replay_node(state: HypothesisMarketState) -> Dict[str, Any]:

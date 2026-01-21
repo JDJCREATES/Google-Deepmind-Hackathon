@@ -833,6 +833,11 @@ class BaseAgent(ABC):
             response = await self.llm.ainvoke(prompt)
             content = response.content
             
+            # Handle list content (common with Gemini 3 thought/response split)
+            if isinstance(content, list):
+                # Join string parts, ignoring dictionary parts (if any)
+                content = "".join([str(c) for c in content if isinstance(c, str)])
+            
             if "IRRELEVANT" in content:
                 self.logger.info(f"Signal deemed irrelevant by {self.agent_name}")
                 return []
@@ -1060,7 +1065,7 @@ Needs: Higher-level coordination or human decision
 
     # ========== DYNAMIC VERIFICATION ==========
 
-    async def propose_verification(self, hypothesis: Any, silence: bool = False) -> Dict[str, Any]:
+    async def propose_verification(self, hypothesis: Any, silence: bool = False, existing_evidence: List[Any] = []) -> Dict[str, Any]:
         """
         Propose a tool call to verify a specific hypothesis.
         
@@ -1069,8 +1074,12 @@ Needs: Higher-level coordination or human decision
         """
         from pydantic import BaseModel, Field
         
-        # Note: The actual meaningful rationale is broadcast when we get the result (line ~1049)
-        # Removed generic "Proposing verification..." spam
+        # Format existing evidence for context
+        evidence_context = ""
+        if existing_evidence:
+            evidence_context = "EXISTING EVIDENCE (DO NOT REPEAT THESE):\n"
+            for e in existing_evidence:
+                evidence_context += f"- Checked {e.data.get('tool')}: {e.data.get('raw_output')}\n"
         
         class VerificationTool(BaseModel):
             """Tool call to verify hypothesis."""
@@ -1080,6 +1089,8 @@ Needs: Higher-level coordination or human decision
             
         system = f"""You are the {self.agent_name}. 
         Propose a specific tool call to verify this hypothesis: "{hypothesis.description}"
+        
+        {evidence_context}
         
         Available Tools:
         - check_sensors(sensor_id, metric)
@@ -1096,6 +1107,7 @@ Needs: Higher-level coordination or human decision
            - VALID: "I'm seeing anomalous data here. I need to pull the sensor logs to see if it's a glitch or real."
            - VALID: "If this hypothesis is true, the camera should show it. Checking feed now."
         3. Be concise but expressive.
+        4. IF you have gathered enough evidence, propose 'verify_complete' tool to signal readiness.
         """
         
         llm = self.llm.with_structured_output(VerificationTool)

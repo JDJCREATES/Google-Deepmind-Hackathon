@@ -67,6 +67,14 @@ class Evidence:
     confidence: float = 0.9
     gathered_by: str = ""
     gathered_at: datetime = field(default_factory=datetime.now)
+    
+    @property
+    def signature(self) -> str:
+        """Unique signature for deduplication: tool_name:params_hash"""
+        import json
+        # Sort params to ensure consistency ({"a":1, "b":2} == {"b":2, "a":1})
+        params_str = json.dumps(self.data.get("params", {}), sort_keys=True)
+        return f"{self.data.get('tool', 'unknown')}:{params_str}"
 
 
 @dataclass

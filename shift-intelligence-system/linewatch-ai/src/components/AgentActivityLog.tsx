@@ -19,7 +19,12 @@ const AgentActivityLog: React.FC = () => {
     
     // Filter logs by type and agent
     const agentLogs = logs.filter(log => {
-        const isAgentEvent = log.type === 'agent_activity' || log.type === 'agent_thinking';
+        const isAgentEvent = 
+            log.type === 'agent_activity' || 
+            log.type === 'agent_thinking' || 
+            log.type === 'agent_action' || 
+            log.type === 'tool_execution';
+            
         if (!isAgentEvent) return false;
         
         if (activeTab === 'all') return true;
@@ -58,6 +63,10 @@ const AgentActivityLog: React.FC = () => {
                     const count = tab.id === 'all' ? agentLogs.length : 
                         logs.filter(l => {
                             const s = (l.source || '').toLowerCase();
+                            // Also fix count logic to include all types
+                            const isType = l.type === 'agent_activity' || l.type === 'agent_thinking' || l.type === 'agent_action' || l.type === 'tool_execution';
+                            if (!isType) return false;
+                            
                             if (tab.id === 'orchestrator') return s.includes('orchestrator') || s.includes('master');
                             return s.includes(tab.id);
                         }).length;
@@ -120,9 +129,14 @@ const AgentActivityLog: React.FC = () => {
                                                     💭 THINKING
                                                 </span>
                                             )}
-                                            {entry.type === 'agent_activity' && (
+                                            {(entry.type === 'agent_activity' || entry.type === 'agent_action') && (
                                                 <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-950/50 text-cyan-300 border border-cyan-800/50">
                                                     ⚡ ACTION
+                                                </span>
+                                            )}
+                                            {entry.type === 'tool_execution' && (
+                                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-950/50 text-amber-300 border border-amber-800/50">
+                                                    🔧 TOOL
                                                 </span>
                                             )}
                                         </div>
@@ -132,9 +146,16 @@ const AgentActivityLog: React.FC = () => {
                                     </div>
                                     
                                     {/* Message */}
-                                    <p className="text-sm text-stone-300 leading-relaxed">
+                                    <p className="text-sm text-stone-300 leading-relaxed whitespace-pre-wrap">
                                         {entry.description}
                                     </p>
+                                    
+                                    {/* Tool Result Details */}
+                                    {entry.type === 'tool_execution' && entry.data && entry.data.result && (
+                                        <div className="mt-2 text-xs font-mono bg-stone-950/80 p-2 rounded border border-stone-800 overflow-x-auto text-stone-400">
+                                            {JSON.stringify(entry.data.result, null, 2)}
+                                        </div>
+                                    )}
                                 </div>
                             );
                         })}

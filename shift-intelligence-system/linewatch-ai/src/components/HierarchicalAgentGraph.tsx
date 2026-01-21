@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import ReactFlow, {
     Background,
     useNodesState,
@@ -7,7 +7,7 @@ import ReactFlow, {
     ConnectionLineType,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
-import { useStore, type LogEntry } from '../store/useStore';
+import { useStore } from '../store/useStore';
 import RichAgentNode from './RichAgentNode';
 
 import ThoughtBubbleNode from './ThoughtBubbleNode';
@@ -51,58 +51,67 @@ const HierarchicalAgentGraph: React.FC = () => {
     const [thoughtBubbles, setThoughtBubbles] = useState<ThoughtBubbleData[]>([]);
     const [agentTokens, setAgentTokens] = useState<Record<string, {input: number, output: number}>>({});
     const [agentActions, setAgentActions] = useState<Record<string, {action: string, timestamp: number}>>({});
-    const [currentActiveAgent, setCurrentActiveAgent] = useState<string | null>(null);
-    const activeAgentTimeoutRef = useRef<number | null>(null);
-    const { logs, thoughtSignatures } = useStore();
+    
+    // Support multiple active agents simultaneously
+    const [activeAgents, setActiveAgents] = useState<Set<string>>(new Set());
+    // Ref to track timeouts per agent to prevent closures from trapping stale state
+    const activeTimersRef = useRef<Record<string, number>>({});
+    
+    const { agentStats } = useStore();
 
-    // Extract agent-specific logs for thought streams
-    const agentThoughts = useMemo(() => {
-        const thoughts: Record<string, string[]> = {
-            orchestrator: [],
-            production: [],
-            compliance: [],
-            staffing: [],
-            maintenance: [],
-        };
-
-        logs.forEach((log: LogEntry) => {
-            const source = (log.source || '').toLowerCase();
-            const desc = log.description || log.type;
-
-            if (source.includes('orchestrator') || source.includes('master')) {
-                thoughts.orchestrator.push(desc);
-            } else if (source.includes('production')) {
-                thoughts.production.push(desc);
-            } else if (source.includes('compliance')) {
-                thoughts.compliance.push(desc);
-            } else if (source.includes('staffing')) {
-                thoughts.staffing.push(desc);
-            } else if (source.includes('maintenance')) {
-                thoughts.maintenance.push(desc);
+    // Subscribe to agentStats for activation state
+    useEffect(() => {
+        // Extract active agents from store
+        const activeSet = new Set<string>();
+        Object.entries(agentStats || {}).forEach(([agentId, stats]) => {
+            if (stats?.isActive) {
+                activeSet.add(agentId);
             }
         });
-
-        // Keep only the 3 most recent per agent
-        Object.keys(thoughts).forEach((key) => {
-            thoughts[key] = thoughts[key].slice(0, 3);
+        setActiveAgents(activeSet);
+    }, [agentStats]);
+    
+    // Subscribe to agentStats for token tracking
+    useEffect(() => {
+        const tokens: Record<string, {input: number, output: number}> = {};
+        Object.entries(agentStats || {}).forEach(([agentId, stats]) => {
+            if (stats) {
+                tokens[agentId] = {
+                    input: stats.inputTokens || 0,
+                    output: stats.outputTokens || 0
+                };
+            }
         });
+        setAgentTokens(tokens);
+    }, [agentStats]);
+    
+    // Subscribe to agentStats for action tracking
+    useEffect(() => {
+        const actions: Record<string, {action: string, timestamp: number}> = {};
+        Object.entries(agentStats || {}).forEach(([agentId, stats]) => {
+            if (stats?.lastAction) {
+                actions[agentId] = {
+                    action: stats.lastAction,
+                    timestamp: stats.lastActionTime || Date.now()
+                };
+            }
+        });
+        setAgentActions(actions);
+    }, [agentStats]);
 
-        return thoughts;
-    }, [logs]);
-
-    // Use currentActiveAgent from WebSocket events instead of logs
-    const activeAgent = currentActiveAgent;
-
-    // Listen for agent_thinking WebSocket events
+    // Listen for agent_thinking WebSocket events (thought bubbles only)
     useEffect(() => {
         const handleMessage = (event: MessageEvent) => {
             try {
                 const message = JSON.parse(event.data);
 
-                
-                // Handle thought bubbles
+                // Handle thought bubbles ONLY
                 if (message.type === 'agent_thinking') {
                     const { agent: rawAgent, thought } = message.data;
+                    
+                    // Edge case: validate agent exists
+                    if (!rawAgent || !thought) return;
+                    
                     const agent = rawAgent.toLowerCase();
                     console.log('[HierarchicalAgentGraph] Received agent_thinking:', agent, thought?.substring(0, 50));
 
@@ -131,65 +140,6 @@ const HierarchicalAgentGraph: React.FC = () => {
                         isDragged: false,
                         timeoutId,
                     }]);
-                    
-                    // Clear any existing timeout
-                    if (activeAgentTimeoutRef.current) {
-                        clearTimeout(activeAgentTimeoutRef.current);
-                    }
-                    
-                    // Set this agent as active
-                    setCurrentActiveAgent(agent);
-
-                    
-                    // Auto-reset after 5 seconds (increased from 3)
-                    activeAgentTimeoutRef.current = setTimeout(() => {
-
-                        setCurrentActiveAgent(null);
-                        activeAgentTimeoutRef.current = null;
-                    }, 5000);
-                }
-                
-                // Handle token stats
-                if (message.type === 'agent_stats_update') {
-                    const { agent, input_tokens, output_tokens } = message.data;
-                    console.log(`📊 Token update: ${agent} - In: ${input_tokens}, Out: ${output_tokens}`);
-
-                    setAgentTokens(prev => {
-                        const updated = {
-                            ...prev,
-                            [agent]: {
-                                input: input_tokens,
-                                output: output_tokens
-                            }
-                        };
-
-                        return updated;
-                    });
-                }
-                
-                // Handle Agent Actions (Decisions)
-                if (message.type === 'agent_action') {
-                    const { agent, actions } = message.data;
-                    console.log(`🎬 Action update: ${agent} - ${actions[0]}`);
-                    
-                    if (actions && actions.length > 0) {
-                        setAgentActions(prev => ({
-                            ...prev,
-                            [agent]: {
-                                action: actions[0], // Take first action as summary
-                                timestamp: Date.now()
-                            }
-                        }));
-                        
-                        // Also momentarily activate the agent
-                        setCurrentActiveAgent(agent);
-                        if (activeAgentTimeoutRef.current) clearTimeout(activeAgentTimeoutRef.current);
-                        activeAgentTimeoutRef.current = setTimeout(() => {
-                            setCurrentActiveAgent(null);
-                        }, 5000);
-                        
-                        // NOTE: We do NOT clear agentActions anymore, so the last action insists.
-                    }
                 }
             } catch (e) {
                 console.error('[HierarchicalAgentGraph] Failed to parse WebSocket message:', e);
@@ -203,13 +153,9 @@ const HierarchicalAgentGraph: React.FC = () => {
             ws.addEventListener('message', handleMessage);
             return () => {
                 ws.removeEventListener('message', handleMessage);
-                // Clean up timeout on unmount
-                if (activeAgentTimeoutRef.current) {
-                    clearTimeout(activeAgentTimeoutRef.current);
-                }
+                // Clean up ALL timeouts on unmount
+                Object.values(activeTimersRef.current).forEach(id => clearTimeout(id));
             };
-        } else {
-
         }
     }, []);
 
@@ -224,6 +170,7 @@ const HierarchicalAgentGraph: React.FC = () => {
         };
 
         const agentNodes = Object.keys(labelMap).map((key) => {
+            const isActive = activeAgents.has(key);
             return {
                 id: key,
                 type: 'richAgent',
@@ -232,12 +179,10 @@ const HierarchicalAgentGraph: React.FC = () => {
                     agentId: key,
                     label: labelMap[key as keyof typeof labelMap],
                     type: key,
-                    status: activeAgent === key ? 'Active' : (key === 'orchestrator' ? 'Coordination' : 'Ready'),
-                    thoughts: agentThoughts[key] || [],
-                    isActive: activeAgent === key,
+                    status: isActive ? 'Active' : (key === 'orchestrator' ? 'Coordination' : 'Ready'),
+                    isActive: isActive,
                     inputTokens: agentTokens[key]?.input || 0,
                     outputTokens: agentTokens[key]?.output || 0,
-                    thoughtSignatures: thoughtSignatures[key] || 0,
                     lastAction: agentActions[key]?.action, // Pass the last action
                 },
             };
@@ -287,7 +232,7 @@ const HierarchicalAgentGraph: React.FC = () => {
 
         // Combine all nodes
         setNodes([...agentNodes, ...thoughtBubbleNodes]);
-    }, [agentThoughts, activeAgent, agentTokens, thoughtBubbles, thoughtSignatures, agentActions]);
+    }, [activeAgents, agentTokens, thoughtBubbles, agentActions]);
 
     // Initialize edges (Hub & Spoke from Orchestrator)
     useEffect(() => {
@@ -297,7 +242,7 @@ const HierarchicalAgentGraph: React.FC = () => {
             { id: 'e-orch-staff', source: 'orchestrator', target: 'staffing' },
             { id: 'e-orch-maint', source: 'orchestrator', target: 'maintenance' },
         ].map((e) => {
-            const isTargetActive = activeAgent === e.target;
+            const isTargetActive = activeAgents.has(e.target);
             return {
                 ...e,
                 type: 'smoothstep',
@@ -317,7 +262,7 @@ const HierarchicalAgentGraph: React.FC = () => {
         });
 
         setEdges(hubEdges);
-    }, [activeAgent]);
+    }, [activeAgents]);
 
     return (
         <div style={{ width: '100%', height: '100%', position: 'relative' }}>

@@ -195,6 +195,15 @@ export interface StoreState {
     // Simulation Control
     simStatus: { running: boolean; uptime: number };
     setSimStatus: (status: { running: boolean; uptime: number }) => void;
+    
+    // Agent Stats (Single Source of Truth for graph)
+    agentStats: Record<string, {
+        inputTokens: number;
+        outputTokens: number;
+        lastAction: string | null;
+        lastActionTime: number;
+        isActive: boolean;
+    }>;
 }
 
 export interface LogEntry {
@@ -216,6 +225,15 @@ interface State {
     
     // Thought tracking (deduplication)
     thoughtSignatures: Record<string, number>; // hash -> timestamp
+    
+    // Agent Stats (Single Source of Truth)
+    agentStats: Record<string, {
+        inputTokens: number;
+        outputTokens: number;
+        lastAction: string | null;
+        lastActionTime: number;
+        isActive: boolean;
+    }>;
 
     // Real-time State
     activeOperators: Record<string, OperatorData>;
@@ -293,6 +311,14 @@ export const useStore = create<State>()(
     isConnected: false,
     logs: [],
     thoughtSignatures: {},
+
+    agentStats: {
+        orchestrator: { inputTokens: 0, outputTokens: 0, lastAction: null, lastActionTime: 0, isActive: false },
+        production: { inputTokens: 0, outputTokens: 0, lastAction: null, lastActionTime: 0, isActive: false },
+        compliance: { inputTokens: 0, outputTokens: 0, lastAction: null, lastActionTime: 0, isActive: false },
+        staffing: { inputTokens: 0, outputTokens: 0, lastAction: null, lastActionTime: 0, isActive: false },
+        maintenance: { inputTokens: 0, outputTokens: 0, lastAction: null, lastActionTime: 0, isActive: false },
+    },
 
     activeOperators: {},
     machineStates: {},
@@ -660,10 +686,64 @@ export const useStore = create<State>()(
                     }));
                     return;
                 }
+                
+                // Agent Stats Update (Token Tracking)
+                if (message.type === 'agent_stats_update') {
+                    const { agent, input_tokens, output_tokens } = message.data;
+                    set(state => ({
+                        agentStats: {
+                            ...state.agentStats,
+                            [agent]: {
+                                ...state.agentStats?.[agent],
+                                inputTokens: input_tokens,
+                                outputTokens: output_tokens,
+                            }
+                        }
+                    }));
+                    return;
+                }
+                
+                // Agent Action (Track last action + activate)
+                if (message.type === 'agent_action' || message.type === 'tool_execution') {
+                    const { agent, actions, tool, rationale } = message.data;
+                    let actionText = "";
+                    if (actions && actions.length > 0) {
+                        actionText = actions[0];
+                    } else if (tool) {
+                        actionText = `🔨 ${tool}: ${rationale?.substring(0, 40) || 'Executing tool...'}`;
+                    }
+                    
+                    if (actionText && agent) {
+                        set(state => ({
+                            agentStats: {
+                                ...state.agentStats,
+                                [agent]: {
+                                    ...state.agentStats?.[agent],
+                                    lastAction: actionText,
+                                    lastActionTime: Date.now(),
+                                    isActive: true,
+                                }
+                            }
+                        }));
+                        
+                        // Auto-deactivate after 5 seconds
+                        setTimeout(() => {
+                            set(state => ({
+                                agentStats: {
+                                    ...state.agentStats,
+                                    [agent]: {
+                                        ...state.agentStats?.[agent],
+                                        isActive: false,
+                                    }
+                                }
+                            }));
+                        }, 5000);
+                    }
+                }
 
                 // LOGGING (Filtered)
                 // Avoid logging high-frequency updates
-                if (['operator_update', 'operator_data_update', 'visibility_sync', 'conveyor_update', 'machine_production_state', 'camera_update', 'supervisor_update', 'operator_fatigue_update', 'shift_status', 'inventory_update', 'line_status', 'maintenance_crew_update'].includes(message.type)) {
+                if (['operator_update', 'operator_data_update', 'visibility_sync', 'conveyor_update', 'machine_production_state', 'camera_update', 'supervisor_update', 'operator_fatigue_update', 'shift_status', 'inventory_update', 'line_status', 'maintenance_crew_update', 'agent_stats_update'].includes(message.type)) {
                     return;
                 }
                 
@@ -682,6 +762,11 @@ export const useStore = create<State>()(
                     } else {
                          description = "Action Executed";
                     }
+                }
+
+                if (message.type === 'tool_execution') {
+                    const { tool, rationale } = message.data;
+                    description = `🔧 Executed ${tool}: ${rationale || ''}`;
                 }
                 
                 if (message.type === 'agent_thought' || message.type === 'agent_thinking' || message.type === 'agent_activity') {

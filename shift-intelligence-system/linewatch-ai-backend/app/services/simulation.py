@@ -1709,16 +1709,30 @@ class SimulationService:
         for line_id in self.machine_production:
              await self._suspend_production_line(str(line_id), "Emergency Evacuation")
             
-        # 2. Update status for all staff
+        # 2. Update status for all staff and move to Assembly Point
+        # Assembly Point is approx (1150, 250) - Front Entrance
         for op in self.operators:
             op["status"] = "evacuating"
             op["current_action"] = "evacuating"
             op["path"] = [] 
             
+            # Add randomization to prevent stacking (jitter +/- 40px)
+            import random
+            offset_x = random.randint(-40, 40)
+            offset_y = random.randint(-40, 40)
+            
+            target_x = 1150 + offset_x
+            target_y = 250 + offset_y
+            
+            path = self.pathfinding.find_path(op["x"], op["y"], target_x, target_y)
+            if path:
+                op["path"] = path
+                op["path_index"] = 0
+            
         self.supervisor["status"] = "evacuating"
         self.supervisor["current_action"] = "coordinating_evacuation"
         
-        # Supervisor moves to assembly point
+        # Supervisor moves to assembly point (central)
         assembly_path = self.pathfinding.find_path(self.supervisor["x"], self.supervisor["y"], 1150, 250)
         if assembly_path:
              self.supervisor["path"] = assembly_path
@@ -1729,6 +1743,41 @@ class SimulationService:
             "data": {
                 "status": "ACTIVE",
                 "message": "EMERGENCY EVACUATION IN PROGRESS - PROCEED TO ASSEMBLY POINT",
+                "timestamp": datetime.now().isoformat()
+            }
+        })
+
+    async def lift_evacuation(self):
+        """Lift emergency evacuation and return to work."""
+        if not self.evacuation_active:
+            return
+
+        logger.info("✅ LIFTING EVACUATION - ALL CLEAR")
+        self.evacuation_active = False
+
+        # 1. Reset Supervisor
+        self.supervisor["status"] = "returning"
+        self._return_supervisor_to_office()
+
+        # 2. Reset Operators
+        # Reset them to 'idle' so they automatically look for work/assigned lines in the next tick
+        for op in self.operators:
+            op["status"] = "idle"
+            op["current_action"] = "returning_to_work"
+            op["path"] = []
+            
+            # Optionally: Find path back to their assigned line immediately
+            # (Assuming assigned_line logic exists, but 'idle' usually prompts standard behavior)
+            
+        # 3. Resume Lines? 
+        # Typically lines stay suspended until manually restarted, but for 'return to work' 
+        # let's assume operators will restart them.
+        
+        await manager.broadcast({
+            "type": "evacuation_alert",
+            "data": {
+                "status": "CLEARED",
+                "message": "ALL CLEAR - Return to stations",
                 "timestamp": datetime.now().isoformat()
             }
         })
@@ -2036,17 +2085,8 @@ class SimulationService:
             }
         }
         
-        # TRIGGER INVESTIGATION so agents actually respond
-        await self._trigger_investigation({
-            "type": "safety_violation",
-            "description": signal["data"]["description"],
-            "operator": op["name"],
-            "operator_id": op["id"],
-            "line_label": line["label"],
-            "line_id": line.get("id", "unknown"),
-            "severity": "CRITICAL",
-            "camera": "Safety_Cam"
-        })
+        # DON'T trigger investigation here - monitoring loop will handle it
+        # This was causing DOUBLE triggers (direct + monitoring loop)
         
         return signal
     
@@ -2073,19 +2113,15 @@ class SimulationService:
                 }
             })
             
-            # FIX: Run as background task to avoid blocking simulation loop
-            task = asyncio.create_task(
-                run_hypothesis_market(
-                    signal_id=f"sim-{int(datetime.now().timestamp())}",
-                    signal_type=event_data.get("type", "UNKNOWN"),
-                    signal_description=event_data.get("description", "Simulation Event"),
-                    signal_data=event_data
-                )
+            # FIX: Call directly instead of creating nested async task
+            # Previous code was creating task-within-task causing duplicates
+            await run_hypothesis_market(
+                signal_id=f"sim-{int(datetime.now().timestamp())}",
+                signal_type=event_data.get("type", "UNKNOWN"),
+                signal_description=event_data.get("description", "Simulation Event"),
+                signal_data=event_data
             )
             
-            # Track task for cleanup
-            self.pending_tasks.add(task)
-            task.add_done_callback(self.pending_tasks.discard)
         except Exception as e:
             # Suppress errors if simulation stopped during investigation
             if self.is_running:
@@ -2161,20 +2197,22 @@ class SimulationService:
                     has_operator = True
                     break
             
-            if not has_operator:
-                # Line is running but abandoned!
-                self.last_alert_times[line_id] = current_time
-                
-                events.append({
-                    "type": "visual_signal",
-                    "data": {
-                        "source": f"Camera_Line_{line_id}",
-                        "description": f"Staffing Alert: Line {line_id} is running UNATTENDED (Check coverage)",
-                        "severity": "MEDIUM",
-                        "line_id": line_id,
-                        "timestamp": datetime.now().isoformat()
-                    }
-                })
+            # DISABLED: Prevents event spam for demo
+            # Unattended lines are not critical enough to trigger investigations
+            # if not has_operator:
+            #     # Line is running but abandoned!
+            #     self.last_alert_times[line_id] = current_time
+            #     
+            #     events.append({
+            #         "type": "visual_signal",
+            #         "data": {
+            #             "source": f"Camera_Line_{line_id}",
+            #             "description": f"Staffing Alert: Line {line_id} is running UNATTENDED (Check coverage)",
+            #             "severity": "MEDIUM",
+            #             "line_id": line_id,
+            #             "timestamp": datetime.now().isoformat()
+            #         }
+            #     })
         
         return events
 

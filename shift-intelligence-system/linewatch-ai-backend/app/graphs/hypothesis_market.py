@@ -19,6 +19,9 @@ from typing import Literal
 from langgraph.graph import END, StateGraph
 from langgraph.checkpoint.memory import MemorySaver
 
+import logging
+logger = logging.getLogger(__name__)
+
 from app.graphs.state import HypothesisMarketState, create_initial_state
 from app.graphs.nodes import (
     load_knowledge_node,
@@ -49,13 +52,25 @@ def should_gather_more_evidence(
     - Haven't hit max iterations
     
     Otherwise returns "decide".
+    
+    QUICK WIN: Hard limit to 2 iterations to prevent infinite loops.
     """
     converged = state.get("converged", False)
     iteration = state.get("iteration", 0)
-    max_iterations = state.get("max_iterations", 3)  # Reduced from 5 for faster demos
+    max_iterations = 2  # HARD LIMIT: Force decision after 2 evidence gathering cycles
+    
+    # Edge case: If we have no new evidence from last iteration, force decision
+    evidence_count = len(state.get("evidence", []))
+    last_evidence_count = state.get("last_evidence_count", 0)
+    
+    if iteration > 0 and evidence_count == last_evidence_count:
+        logger.info(f"🛑 No new evidence gathered in iteration {iteration}, forcing decision")
+        return "decide"
     
     if not converged and iteration < max_iterations:
         return "gather_more"
+    
+    logger.info(f"🛑 Reached max iterations ({max_iterations}) or converged, forcing decision")
     return "decide"
 
 

@@ -216,9 +216,9 @@ const RichAgentNode: React.FC<RichAgentNodeProps> = memo(({ data }) => {
 
                     {/* Last Action Badge */}
                     {data.lastAction && (
-                        <div className="mt-1.5 flex items-center justify-center gap-1 text-[8px] text-cyan-400">
-                            <FaBolt className="text-cyan-400" size={10} />
-                            <span className="font-mono">{data.lastAction}</span>
+                        <div className="mt-1.5 flex items-center justify-center gap-1 text-[9px] text-cyan-300 bg-cyan-950/80 px-1.5 py-0.5 rounded border border-cyan-800/50 max-w-[150px]">
+                            <FaBolt className="text-cyan-400 flex-shrink-0" size={10} />
+                            <span className="font-mono truncate">{data.lastAction}</span>
                         </div>
                     )}
                 </div>
