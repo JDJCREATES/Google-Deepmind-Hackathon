@@ -1,9 +1,11 @@
 
+
 import { useEffect, useState } from 'react';
 import { useStore } from '../store/useStore';
 import FloorMap from '../components/FloorMap';
 import HierarchicalAgentGraph from '../components/HierarchicalAgentGraph';
 import AgentActivityLog from '../components/AgentActivityLog';
+import { UsageTimer } from '../components/UsageTimer';
 import { FaPlay, FaStop, FaBolt, FaFlask, FaIndustry, FaChartLine } from 'react-icons/fa';
 import clsx from 'clsx';
 import { api } from '../services/api';
@@ -62,6 +64,11 @@ export default function DashboardPage() {
                 />
             </div>
         </div>
+
+      {/* Usage Timer */}
+      <div className="hidden md:flex">
+        <UsageTimer />
+      </div>
 
       {/* Financial Tracker - Responsive Grid */}
       <div className="flex items-center gap-2 md:gap-4 lg:gap-6 overflow-x-auto no-scrollbar">

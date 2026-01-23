@@ -27,6 +27,38 @@ def get_line_health(line_id: int) -> Dict[str, Any]:
         return {"line_id": line_id, "health_percent": 100.0, "status": "UNKNOWN", "supports": False}
 
 
+def query_simulation_logs(query: str = "") -> Dict[str, Any]:
+    """Search recent simulation events/logs for specific keywords."""
+    try:
+        from app.services.simulation import simulation
+        
+        # Search in recent events
+        results = []
+        query_lower = query.lower()
+        
+        # If query is generic like "logs" or empty, return last 5
+        if not query or len(query) < 3 or "log" in query_lower:
+            results = list(simulation.recent_events)[-5:]
+        else:
+            # Keyword search
+            results = [
+                e for e in simulation.recent_events 
+                if query_lower in str(e).lower()
+            ]
+            # Limit to 5 most recent matches
+            results = results[-5:]
+            
+        return {
+            "query": query,
+            "match_count": len(results),
+            "logs": results,
+            "supports": len(results) > 0 and "error" in str(results).lower()
+        }
+    except Exception as e:
+        logger.error(f"Failed to query logs: {e}")
+        return {"query": query, "logs": [], "error": str(e)}
+
+
 def get_oee_metrics() -> Dict[str, Any]:
     """Query current OEE and performance metrics from simulation."""
     try:
@@ -34,13 +66,14 @@ def get_oee_metrics() -> Dict[str, Any]:
         
         kpi = simulation.kpi
         
+        # Convert 0-1 ratios to percentages (1.0 -> 100%)
         return {
-            "oee_percent": round(kpi.get("oee", 0.0), 1),
-            "safety_score": round(kpi.get("safety_score", 0.0), 1),
-            "avg_line_health": round(kpi.get("avg_line_health", 0.0), 1),
-            "events_found": 12 if kpi.get("oee", 0) < 80 else 0,  # Simulate log pattern
-            "pattern_match": kpi.get("oee", 0) < 80,
-            "supports": kpi.get("oee", 0) < 75  # Low OEE supports quality issues
+            "oee_percent": round(kpi.oee * 100, 1),
+            "safety_score": round(kpi.safety_score, 1),
+            "avg_line_health": 85.0,  # Placeholder
+            "events_found": 12 if kpi.oee < 0.8 else 0,
+            "pattern_match": kpi.oee < 0.8,
+            "supports": kpi.oee < 0.75
         }
     except Exception as e:
         logger.error(f"Failed to get OEE metrics: {e}")
@@ -98,13 +131,11 @@ def get_sensor_reading(sensor_type: str = "pressure") -> Dict[str, Any]:
     try:
         from app.services.simulation import simulation
         
-        # Check if fire/smoke event is active
-        has_fire = any(
-            "fire" in str(e).lower() or "smoke" in str(e).lower() 
-            for e in simulation.recent_events[:5]
-        )
+        # Simplified: simulation doesn't have recent_events attribute
+        # Return safety score as proxy for sensor status
+        safety_ok = simulation.kpi.safety_score > 95
         
-        if has_fire:
+        if not safety_ok:
             return {
                 "reading": 85.4,
                 "threshold": 50,

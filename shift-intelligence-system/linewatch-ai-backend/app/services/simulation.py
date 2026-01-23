@@ -294,6 +294,13 @@ class SimulationService:
             safety_score=100.0
         )
         
+        # Rate limiting - track which IP started the simulation
+        self._current_ip: Optional[str] = None
+        
+        # Log storage for agents (Last 50 events)
+        from collections import deque
+        self.recent_events = deque(maxlen=50)
+        
         # Initialize Warehouse Inventory
         self.warehouse_inventory = {k: 0 for k in PRODUCT_CATALOG.keys()}
         
@@ -914,9 +921,23 @@ class SimulationService:
             )
 
         
+        # ====== RATE LIMITING TRACKING ======
+        if hasattr(self, '_current_ip') and self._current_ip:
+            from app.services.rate_limiter import rate_limiter
+            rate_limiter.record_simulation_time(self._current_ip, self.tick_rate)
+            
+            # Check if IP exceeded daily limit
+            can_continue, remaining = rate_limiter.check_daily_limit(self._current_ip)
+            if not can_continue:
+                logger.warning(f"IP {self._current_ip} exceeded 5-minute daily limit, auto-stopping")
+                await self.stop()
+                
         # Broadcast all events in a SINGLE batched message
         # This prevents overwhelming the WebSocket with 15-20+ messages per tick
         if events:
+            # Store events for agent queries
+            self.recent_events.extend(events)
+            
             await manager.broadcast({
                 "type": "batch_update",
                 "data": {
@@ -1360,49 +1381,7 @@ class SimulationService:
                         op["current_action"] = "patrolling"
                     # If no path found, stay in place
     
-    async def run(self):
-        """Main simulation loop."""
-        self.is_running = True
-        logger.info("🚀 Simulation started (Economy Enabled)")
-        
-        self.tick_rate = 0.5  # Seconds per tick
-        ticks = 0
-        
-        while self.is_running:
-            start_time = datetime.now()
-            
-            # 1. Update Entities
-            self._move_agents()
-            self._update_conveyors()
-            self._update_production_progress()
-            self._update_operator_fatigue()
-            
-            # 2. Economy & Sales & Metrics
-            self._process_finances(self.tick_rate)
-            self._process_market_sales()
-            self._calculate_metrics(self.tick_rate)
-            
-            # 3. Events & Anomalies
-            events = self._check_cameras()
-            
-            # Saving State (Every 100 ticks ~50s)
-            if ticks % 100 == 0:
-                self._save_state()
 
-            # Random Breakdown (approx every 3 mins for demo)
-            if random.random() < (0.003 * self.tick_rate): 
-                breakdown_event = self._generate_breakdown()
-                events.append(breakdown_event)
-            
-            # Broadcast updates
-            await self._broadcast_state(events)
-            
-            ticks += 1
-            
-            # Maintain tick rate
-            elapsed = (datetime.now() - start_time).total_seconds()
-            sleep_time = max(0, self.tick_rate - elapsed)
-            await asyncio.sleep(sleep_time)
     
     def _update_operator_fatigue(self):
         """Accumulate operator fatigue and handle break requests."""

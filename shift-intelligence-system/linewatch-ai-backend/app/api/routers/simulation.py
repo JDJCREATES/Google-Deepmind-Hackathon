@@ -1,11 +1,12 @@
 """
 API Router for controlling the background simulation.
 """
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Request
 from pydantic import BaseModel
 from typing import Dict, Any, Optional
 
 from app.services.simulation import simulation
+from app.services.rate_limiter import rate_limiter
 from app.utils.logging import get_agent_logger
 
 router = APIRouter(prefix="/simulation", tags=["Simulation"])
@@ -23,13 +24,26 @@ class ManualEvent(BaseModel):
 
 
 @router.post("/start")
-async def start_simulation():
-    """Start the background simulation loop."""
+async def start_simulation(request: Request):
+    """Start the background simulation loop. Rate limited: 5 minutes per IP per day."""
+    ip = request.client.host
+    
+    # Check if IP has remaining time
+    can_run, remaining = rate_limiter.check_daily_limit(ip)
+    if not can_run:
+        raise HTTPException(status_code=429, detail="Daily limit exceeded. Try again tomorrow!")
+    
     if simulation.is_running:
-        return {"status": "already_running"}
+        return {"status": "already_running", "remaining_seconds": remaining}
+    
+    # Record session start
+    rate_limiter.start_session(ip)
+    simulation._current_ip = ip
     
     await simulation.start()
-    return {"status": "started"}
+    logger.info(f"Simulation started by {ip} ({remaining}s remaining)")
+    
+    return {"status": "started", "remaining_seconds": remaining}
 
 
 @router.post("/stop")
@@ -43,15 +57,22 @@ async def stop_simulation():
 
 
 @router.post("/event")
-async def inject_event(event: ManualEvent):
-    """
-    Manually inject an event into the simulation.
-    Useful for demos to trigger specific scenarios.
-    """
+async def inject_event(event: ManualEvent, request: Request):
+    """Manually inject an event. Rate limited: 30s cooldown between injections."""
+    ip = request.client.host
+    
+    # Check inject cooldown
+    can_inject, cooldown = rate_limiter.check_inject_cooldown(ip)
+    if not can_inject:
+        raise HTTPException(status_code=429, detail=f"Wait {cooldown}s before injecting again.")
+    
     if not simulation.is_running:
-        raise HTTPException(status_code=400, detail="Simulation must be running to inject events")
-        
+        raise HTTPException(status_code=400, detail="Simulation must be running")
+    
+    rate_limiter.record_inject(ip)
     result = await simulation.inject_event(event.event_type, event.severity)
+    logger.info(f"Event '{event.event_type}' injected by {ip}")
+    
     return {"status": "injected", "event": result}
 
 
@@ -63,6 +84,13 @@ async def get_status():
         "uptime_minutes": int(simulation.total_uptime_minutes),
         "tick_rate": simulation.tick_rate
     }
+
+
+@router.get("/usage")
+async def get_usage(request: Request):
+    """Get rate limit usage stats for the requesting IP. Used by frontend timer."""
+    ip = request.client.host
+    return rate_limiter.get_usage_stats(ip)
 
 
 @router.get("/layout")

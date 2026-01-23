@@ -548,7 +548,8 @@ async def gather_evidence_node(state: HypothesisMarketState) -> Dict[str, Any]:
         TOOL_REGISTRY = {
             "inspect_machine": lambda p: get_line_health(p.get("line_id", 1)),
             "check_line_health": lambda p: get_line_health(p.get("line_id", 1)),
-            "query_logs": lambda p: get_oee_metrics(),
+            "query_logs": lambda p: metrics_tools.query_simulation_logs(p if isinstance(p, str) else ""),
+            "query_simulation_logs": lambda p: metrics_tools.query_simulation_logs(p if isinstance(p, str) else ""),
             "check_sensors": lambda p: get_sensor_reading(p.get("sensor_type", "pressure")),
             "get_crew_location": lambda p: get_crew_status(),
             "check_schedule": lambda p: get_oee_metrics(),
