@@ -11,6 +11,7 @@ RESPONSIBILITIES:
 
 YOUR TOOLS:
 - check_all_equipment_health: Health scores (0-100) for all 20 lines
+- query_logs: Search logs for failure history or specific error patterns
 - schedule_maintenance: Plan maintenance during optimal windows
 - create_work_order: Generate ticket with priority and details
 - estimate_downtime: Calculate expected offline duration

@@ -93,50 +93,80 @@ class ComplianceAgent(BaseAgent):
     async def generate_hypotheses(self, signal: Dict[str, Any]) -> List[Any]:
         """
         Generate HACCP and FMEA hypotheses for compliance issues.
+        Use LLM investigation instead of keyword matching.
         """
         from app.hypothesis import create_hypothesis, HypothesisFramework
         from uuid import uuid4
+        from langchain_core.messages import HumanMessage
         
-        self.logger.info("💡 Generating Compliance hypotheses (HACCP/FMEA)")
+        self.logger.info("💡 ComplianceAgent investigating safety/compliance hypothesis")
         
-        hypotheses = []
         signal_desc = signal.get('description', '')
+        signal_data = signal.get('data', {})
         
-        # HACCP Hypothesis: CCP Violation
-        if 'temperature' in signal_desc.lower() or 'contamination' in signal_desc:
-            hypotheses.append(create_hypothesis(
-                framework=HypothesisFramework.HACCP,
-                hypothesis_id=f"H-CCP-{uuid4().hex[:6]}",
-                description="Critical Control Point limit deviation detected",
-                initial_confidence=0.8,
-                impact=10.0,
-                urgency=10.0,
-                proposed_by=self.agent_name,
-                recommended_action="Quarantine affected product batch",
-                target_agent="ComplianceAgent"
-            ))
+        investigation_prompt = f"""
+EVENT: {signal_desc}
+DATA: {str(signal_data)[:300]}
+
+You are the ComplianceAgent. Analyze this safety/compliance issue.
+
+STEPS:
+1. Use query_logs() to check similar past incidents
+2. Assess regulatory risk (OSHA, FDA, HACCP)
+3. Generate SPECIFIC hypothesis about safety impact
+
+Respond in JSON:
+{{
+    "description": "Specific safety issue (e.g. 'Motor overheat on Line 11 poses fire hazard, within 10ft of operators Riley and Casey')",
+    "confidence": 0.9,
+    "recommended_action": "Specific action (e.g. 'Evacuate operators within 15ft, initiate fire suppression protocol')",
+    "urgency": 10.0
+}}
+
+BE SPECIFIC. Identify hazards, cite safety standards violated, name impacted personnel.
+"""
+        
+        try:
+            await self._ensure_agent_initialized()
+            result = await self.agent.ainvoke(
+                {"messages": [HumanMessage(content=investigation_prompt)]},
+                config={"configurable": {"thread_id": f"comp-hypo-{uuid4().hex[:6]}"}}
+            )
             
-        # FMEA Hypothesis: Safety Risk
-        # Expanded keywords to catch equipment warnings and general hazards
-        trigger_words = ['guard', 'ppe', 'safety', 'smoke', 'fire', 'warning', 'risk', 'hazard', 'overheat', 'jam']
-        if any(w in signal_desc.lower() for w in trigger_words):
-            hypotheses.append(create_hypothesis(
-                framework=HypothesisFramework.FMEA,
-                hypothesis_id=f"H-FMEA-{uuid4().hex[:6]}",
-                description="High severity failure mode activated (Safety Threat)",
-                initial_confidence=0.9 if 'smoke' in signal_desc.lower() else 0.7,
-                impact=10.0 if 'smoke' in signal_desc.lower() else 9.0,
-                urgency=10.0 if 'smoke' in signal_desc.lower() else 8.0,
-                proposed_by=self.agent_name,
-                recommended_action="Evacuate and suspend line operation",
-                target_agent="ProductionAgent"
-            ))
+            response_text = result["messages"][-1].content
+            if isinstance(response_text, list):
+                response_text = str(response_text)
             
-        # Fallback to LLM reasoning if heuristics miss
-        if not hypotheses:
-            return await super().generate_hypotheses(signal)
-            
-        return hypotheses
+            import json, re
+            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+            if json_match:
+                hypo_data = json.loads(json_match.group(0))
+                return [create_hypothesis(
+                    framework=HypothesisFramework.FMEA,
+                    hypothesis_id=f"H-FMEA-{uuid4().hex[:6]}",
+                    description=hypo_data.get("description", signal_desc),
+                    initial_confidence=hypo_data.get("confidence", 0.8),
+                    impact=10.0,
+                    urgency=hypo_data.get("urgency", 9.0),
+                    proposed_by=self.agent_name,
+                    recommended_action=hypo_data.get("recommended_action", "Assess safety risk"),
+                    target_agent="ComplianceAgent"
+                )]
+        except Exception as e:
+            self.logger.error(f"ComplianceAgent investigation failed: {e}")
+        
+        # Fallback
+        return [create_hypothesis(
+            framework=HypothesisFramework.FMEA,
+            hypothesis_id=f"H-FMEA-{uuid4().hex[:6]}",
+            description=f"Safety/compliance issue detected: {signal_desc}",
+            initial_confidence=0.7,
+            impact=9.0,
+            urgency=8.0,
+            proposed_by=self.agent_name,
+            recommended_action="Review safety protocols",
+            target_agent="ComplianceAgent"
+        )]
     
     #========== ACTION EXECUTION ==========
     

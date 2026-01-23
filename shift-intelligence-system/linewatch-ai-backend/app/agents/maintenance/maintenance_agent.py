@@ -90,43 +90,93 @@ class MaintenanceAgent(BaseAgent):
     async def generate_hypotheses(self, signal: Dict[str, Any]) -> List[Any]:
         """
         Generate FMEA and RCA hypotheses for equipment issues.
+        Use REAL investigation tools instead of keyword matching.
         """
         from app.hypothesis import create_hypothesis, HypothesisFramework
         from uuid import uuid4
         
-        self.logger.info("💡 Generating Maintenance hypotheses (FMEA/RCA)")
+        self.logger.info("💡 MaintenanceAgent investigating maintenance hypothesis")
         
-        hypotheses = []
         signal_desc = signal.get('description', '')
         signal_data = signal.get('data', {})
         
-        # safely extract line_id from data or top level
+        # Extract line_id
         line_id = signal_data.get('line_id') or signal.get('line_id') or 0
         
-        # FMEA: Predictive failure
-        # Broaden keywords to catch "Equipment Warning" and specific failures described in simulation
-        triggers = ['vibration', 'noise', 'smoke', 'fire', 'overheat', 'breakdown', 'jam', 'stuck', 'failure', 'warning', 'drop', 'misalignment']
-        if any(w in signal_desc.lower() for w in triggers):
-            hs_desc = f"Critical component failure detection on Line {line_id}"
+        # Use LLM to analyze the event and generate specific hypothesis
+        investigation_prompt = f"""
+EVENT ALERT: {signal_desc}
+LINE ID: {line_id}
+RAW DATA: {str(signal_data)[:300]}
+
+You are the MaintenanceAgent. Investigate this equipment issue.
+
+STEPS:
+1. Use query_logs("{signal_desc[:50]}") to check recent failure history
+2. Use check_all_equipment_health() to see current health scores
+3. Generate a SPECIFIC hypothesis about the root cause
+
+Respond in this JSON format:
+{{
+    "description": "Specific technical hypothesis (e.g. 'Bearing wear causing motor overheat on Line 11 due to 400hrs runtime')",
+    "confidence": 0.75,
+    "recommended_action": "dispatch_maintenance_crew(machine_id=11, issue='bearing_replacement')",
+    "urgency": 9.0,
+    "reasoning": "Brief technical explanation"
+}}
+
+BE SPECIFIC. Quote sensor readings, error codes, or failure patterns. NO generic "equipment failure" responses.
+"""
+        
+        # Call LLM to investigate
+        try:
+            await self._ensure_agent_initialized()
+            from langchain_core.messages import HumanMessage
             
-            hypotheses.append(create_hypothesis(
-                framework=HypothesisFramework.FMEA,
-                hypothesis_id=f"H-MAINT-{uuid4().hex[:6]}",
-                description=hs_desc,
-                initial_confidence=0.95,
-                impact=10.0,
-                urgency=10.0,
-                proposed_by=self.agent_name,
-                recommended_action=f"dispatch_maintenance_crew(machine_id={line_id})",
-                target_agent="MaintenanceAgent"
-            ))
+            result = await self.agent.ainvoke(
+                {"messages": [HumanMessage(content=investigation_prompt)]},
+                config={"configurable": {"thread_id": f"maint-hypo-{uuid4().hex[:6]}"}}
+            )
             
+            response_text = result["messages"][-1].content
+            if isinstance(response_text, list):
+                response_text = str(response_text)
             
-        # Fallback to LLM reasoning if heuristics miss
-        if not hypotheses:
-            return await super().generate_hypotheses(signal)
-            
-        return hypotheses
+            # Parse JSON response
+            import json, re
+            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+            if json_match:
+                hypo_data = json.loads(json_match.group(0))
+                
+                return [create_hypothesis(
+                    framework=HypothesisFramework.FMEA,
+                    hypothesis_id=f"H-MAINT-{uuid4().hex[:6]}",
+                    description=hypo_data.get("description", signal_desc),
+                    initial_confidence=hypo_data.get("confidence", 0.7),
+                    impact=10.0,
+                    urgency=hypo_data.get("urgency", 8.0),
+                    proposed_by=self.agent_name,
+                    recommended_action=hypo_data.get("recommended_action", f"dispatch_maintenance_crew(machine_id={line_id})"),
+                    target_agent="MaintenanceAgent"
+                )]
+            else:
+                self.logger.warning("MaintenanceAgent didn't return valid JSON, using fallback")
+                
+        except Exception as e:
+            self.logger.error(f"MaintenanceAgent investigation failed: {e}")
+        
+        # Fallback to generic if LLM fails
+        return [create_hypothesis(
+            framework=HypothesisFramework.FMEA,
+            hypothesis_id=f"H-MAINT-{uuid4().hex[:6]}",
+            description=f"Equipment issue detected: {signal_desc}",
+            initial_confidence=0.6,
+            impact=8.0,
+            urgency=7.0,
+            proposed_by=self.agent_name,
+            recommended_action=f"dispatch_maintenance_crew(machine_id={line_id})",
+            target_agent="MaintenanceAgent"
+        )]
     
     async def _execute_action(self, action: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """Execute maintenance actions."""

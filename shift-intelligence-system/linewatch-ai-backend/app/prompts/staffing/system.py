@@ -27,6 +27,7 @@ Roster Management:
 - calculate_coverage_needs: Determine needs
 - reassign_worker: Move operator to different bank of lines
 - check_fatigue_levels: Monitor fatigue
+- query_logs: Investigating operator specific incidents (e.g. "Riley")
 
 HR Actions:
 - issue_write_up: Disciplinary actions

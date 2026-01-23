@@ -2083,17 +2083,18 @@ class SimulationService:
             if not self.is_running:
                 return
             
+            logger.warning(f"🔍 INVESTIGATION STARTED: {event_data.get('description', 'Unknown Event')}")
+            
             await manager.broadcast({
                 "type": "agent_thinking",
                 "data": {
-                    "agent": "ORCHESTRATOR", # Frontend expects "agent", not "source" for thought bubbles
-                    "thought": f"Initiating investigation for {event_data.get('description')}", # Frontend expects "thought"
+                    "agent": "ORCHESTRATOR",
+                    "thought": f"Initiating investigation for {event_data.get('description')}",
                     "timestamp": datetime.now().isoformat()
                 }
             })
             
             # FIX: Call directly instead of creating nested async task
-            # Previous code was creating task-within-task causing duplicates
             await run_hypothesis_market(
                 signal_id=f"sim-{int(datetime.now().timestamp())}",
                 signal_type=event_data.get("type", "UNKNOWN"),
@@ -2101,10 +2102,13 @@ class SimulationService:
                 signal_data=event_data
             )
             
+            logger.info(f"✅ INVESTIGATION COMPLETED: {event_data.get('description')}")
+            
         except Exception as e:
-            # Suppress errors if simulation stopped during investigation
-            if self.is_running:
-                logger.error(f"Failed to trigger investigation: {e}")
+            # ALWAYS log the error, even if simulation stopped
+            logger.error(f"❌ INVESTIGATION FAILED: {event_data.get('description')} - Error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
     
     async def _finish_repair(self, machine_id: int):
         """Helper to simulate repair duration and return trip."""
@@ -2281,11 +2285,30 @@ class SimulationService:
     async def inject_event(self, event_type: str, severity: str = "HIGH"):
         """Manually inject an event (for demos/testing)."""
         logger.info(f"💉 Injecting manual event: {event_type}")
-        if event_type == "fire":
+        
+        event = None
+        if event_type == "fire" or event_type == "breakdown":
             event = self._generate_breakdown()
+            # Force severity if specified
+            if severity:
+                event["data"]["severity"] = severity
+                
+        elif event_type == "safety_violation":
+            event = await self._trigger_safety_violation()
+            
+        if event:
+            # Broadcast to UI
             await manager.broadcast(event)
+            
+            # TRIGGER THE AGENT GRAPH!
+            # This was missing - agents were ignoring manual events
+            if event["data"].get("severity") in ["HIGH", "CRITICAL"]:
+                logger.info(f"🤖 Triggering Agent Investigation for manual {event_type}")
+                asyncio.create_task(self._trigger_investigation(event["data"]))
+            
             return event
-        return {"status": "injected", "type": event_type}
+            
+        return {"status": "ignored", "reason": "unknown event type"}
 
 
 # Global instance

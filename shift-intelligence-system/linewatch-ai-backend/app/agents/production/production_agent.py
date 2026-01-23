@@ -99,48 +99,81 @@ class ProductionAgent(BaseAgent):
     async def generate_hypotheses(self, signal: Dict[str, Any]) -> List[Any]:
         """
         Generate RCA and TOC hypotheses for production issues.
+        Use LLM investigation instead of keyword matching.
         """
         from app.hypothesis import create_hypothesis, HypothesisFramework
         from uuid import uuid4
+        from langchain_core.messages import HumanMessage
         
-        self.logger.info("💡 Generating Production hypotheses (RCA/TOC)")
+        self.logger.info("💡 ProductionAgent investigating production hypothesis")
         
-        hypotheses = []
         signal_desc = signal.get('description', '')
+        signal_data = signal.get('data', {})
+        line_id = signal_data.get('line_id', 0)
         
-        # RCA Hypothesis: Equipment failure
-        if any(w in signal_desc.lower() for w in ['throughput', 'stopped', 'smoke', 'fire', 'failure']):
-            hypotheses.append(create_hypothesis(
-                framework=HypothesisFramework.RCA,
-                hypothesis_id=f"H-PROD-{uuid4().hex[:6]}",
-                description=f"Equipment failure on line causing {signal_desc}",
-                initial_confidence=0.9 if 'smoke' in signal_desc.lower() else 0.6,
-                impact=10.0 if 'smoke' in signal_desc.lower() else 8.0,
-                urgency=10.0 if 'smoke' in signal_desc.lower() else 9.0,
-                proposed_by=self.agent_name,
-                recommended_action="Emergency shutdown and diagnostic",
-                target_agent="ProductionAgent"
-            ))
+        investigation_prompt = f"""
+EVENT: {signal_desc}
+DATA: {str(signal_data)[:300]}
+
+You are the ProductionAgent. Analyze this production issue.
+
+STEPS:
+1. Use query_logs() to check recent production patterns
+2. Use get_all_line_metrics() to see current performance
+3. Generate SPECIFIC hypothesis about the impact
+
+Respond in JSON:
+{{
+    "description": "Specific production impact (e.g. 'Line 11 shutdown causing 20% throughput loss, $500/hr revenue impact')",
+    "confidence": 0.8,
+    "recommended_action": "Specific action (e.g. 'Emergency shutdown Line 11, reroute to Line 12')",
+    "urgency": 9.0
+}}
+
+BE SPECIFIC. Quote metrics, revenue impact, downtime estimates.
+"""
+        
+        try:
+            await self._ensure_agent_initialized()
+            result = await self.agent.ainvoke(
+                {"messages": [HumanMessage(content=investigation_prompt)]},
+                config={"configurable": {"thread_id": f"prod-hypo-{uuid4().hex[:6]}"}}
+            )
             
-        # TOC Hypothesis: Upstream bottleneck
-        if 'slow' in signal_desc.lower() or 'waiting' in signal_desc:
-            hypotheses.append(create_hypothesis(
-                framework=HypothesisFramework.TOC,
-                hypothesis_id=f"H-TOC-{uuid4().hex[:6]}",
-                description="Upstream bottleneck constraining throughput",
-                initial_confidence=0.5,
-                impact=7.0,
-                urgency=7.0,
-                proposed_by=self.agent_name,
-                recommended_action="Analyze bottleneck root cause",
-                target_agent="ProductionAgent"
-            ))
+            response_text = result["messages"][-1].content
+            if isinstance(response_text, list):
+                response_text = str(response_text)
             
-        # Fallback to LLM reasoning if heuristics miss
-        if not hypotheses:
-            return await super().generate_hypotheses(signal)
-            
-        return hypotheses
+            import json, re
+            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+            if json_match:
+                hypo_data = json.loads(json_match.group(0))
+                return [create_hypothesis(
+                    framework=HypothesisFramework.RCA,
+                    hypothesis_id=f"H-PROD-{uuid4().hex[:6]}",
+                    description=hypo_data.get("description", signal_desc),
+                    initial_confidence=hypo_data.get("confidence", 0.7),
+                    impact=9.0,
+                    urgency=hypo_data.get("urgency", 8.0),
+                    proposed_by=self.agent_name,
+                    recommended_action=hypo_data.get("recommended_action", "Investigate production impact"),
+                    target_agent="ProductionAgent"
+                )]
+        except Exception as e:
+            self.logger.error(f"ProductionAgent investigation failed: {e}")
+        
+        # Fallback
+        return [create_hypothesis(
+            framework=HypothesisFramework.RCA,
+            hypothesis_id=f"H-PROD-{uuid4().hex[:6]}",
+            description=f"Production impact from: {signal_desc}",
+            initial_confidence=0.6,
+            impact=7.0,
+            urgency=7.0,
+            proposed_by=self.agent_name,
+            recommended_action="Assess production impact",
+            target_agent="ProductionAgent"
+        )]
 
     # ========== SPECIALIZED ACTION EXECUTION ==========
     

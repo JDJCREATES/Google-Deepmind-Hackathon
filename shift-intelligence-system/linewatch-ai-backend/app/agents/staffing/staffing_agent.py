@@ -150,52 +150,80 @@ class StaffingAgent(BaseAgent):
     async def generate_hypotheses(self, signal: Dict[str, Any]) -> List[Any]:
         """
         Generate Staffing-related hypotheses.
+        Use LLM investigation instead of keyword matching.
         """
         from app.hypothesis import create_hypothesis, HypothesisFramework
         from uuid import uuid4
+        from langchain_core.messages import HumanMessage
         
-        hypotheses = []
+        self.logger.info("💡 StaffingAgent investigating staffing hypothesis")
+        
         signal_desc = signal.get('description', '')
+        signal_data = signal.get('data', {})
         
-        # TOC: Labor shortage
-        # TOC: Labor shortage & Staffing Issues
-        keywords = ['understaffed', 'coverage', 'fatigue', 'tired', 'break', 'staff', 'operator', 'absent', 'missing', 'empty', 'shift']
-        if any(k in signal_desc.lower() for k in keywords):
-            hypotheses.append(create_hypothesis(
-                framework=HypothesisFramework.TOC,
-                hypothesis_id=f"H-STAFF-{uuid4().hex[:6]}",
-                description="Staffing/Labor optimization opportunity detected",
-                initial_confidence=0.85,
-                impact=8.0,
-                urgency=8.0,
-                proposed_by=self.agent_name,
-                recommended_action="Check fatigue and optimize roster",
-                target_agent="StaffingAgent"
-            ))
+        investigation_prompt = f"""
+EVENT: {signal_desc}
+DATA: {str(signal_data)[:300]}
+
+You are the StaffingAgent. Analyze this workforce issue.
+
+STEPS:
+1. Use get_shift_roster() to see current assignments
+2. Use check_fatigue_levels() to assess operator states
+3. Generate SPECIFIC hypothesis about staffing impact
+
+Respond in JSON:
+{{
+    "description": "Specific staffing issue (e.g. 'Line 3-6 unattended due to Casey on break, no coverage assigned')",
+    "confidence": 0.85,
+    "recommended_action": "Specific action (e.g. 'Reassign Riley to cover Lines 3-6 immediately')",
+    "urgency": 8.0
+}}
+
+BE SPECIFIC. Name operators, cite fatigue percentages, identify coverage gaps.
+"""
+        
+        try:
+            await self._ensure_agent_initialized()
+            result = await self.agent.ainvoke(
+                {"messages": [HumanMessage(content=investigation_prompt)]},
+                config={"configurable": {"thread_id": f"staff-hypo-{uuid4().hex[:6]}"}}
+            )
             
-        # Unattended Line Hypothesis (High Priority)
-        if "unattended" in signal_desc.lower():
-            import re
-            line_match = re.search(r'line (\d+)', signal_desc.lower())
-            target_line = line_match.group(1) if line_match else "unknown"
+            response_text = result["messages"][-1].content
+            if isinstance(response_text, list):
+                response_text = str(response_text)
             
-            hypotheses.append(create_hypothesis(
-                framework=HypothesisFramework.TOC,
-                hypothesis_id=f"H-COVERAGE-{uuid4().hex[:6]}",
-                description=f"Critical coverage gap on Line {target_line}",
-                initial_confidence=0.95,
-                impact=9.0,
-                urgency=9.0,
-                proposed_by=self.agent_name,
-                recommended_action=f"Reassign worker to Line {target_line}",
-                target_agent="StaffingAgent"
-            ))
-            
-        # Fallback to LLM reasoning if heuristics miss
-        if not hypotheses:
-            return await super().generate_hypotheses(signal)
-            
-        return hypotheses
+            import json, re
+            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+            if json_match:
+                hypo_data = json.loads(json_match.group(0))
+                return [create_hypothesis(
+                    framework=HypothesisFramework.TOC,
+                    hypothesis_id=f"H-STAFF-{uuid4().hex[:6]}",
+                    description=hypo_data.get("description", signal_desc),
+                    initial_confidence=hypo_data.get("confidence", 0.75),
+                    impact=8.0,
+                    urgency=hypo_data.get("urgency", 7.0),
+                    proposed_by=self.agent_name,
+                    recommended_action=hypo_data.get("recommended_action", "Optimize staffing"),
+                    target_agent="StaffingAgent"
+                )]
+        except Exception as e:
+            self.logger.error(f"StaffingAgent investigation failed: {e}")
+        
+        # Fallback
+        return [create_hypothesis(
+            framework=HypothesisFramework.TOC,
+            hypothesis_id=f"H-STAFF-{uuid4().hex[:6]}",
+            description=f"Staffing issue detected: {signal_desc}",
+            initial_confidence=0.6,
+            impact=7.0,
+            urgency=7.0,
+            proposed_by=self.agent_name,
+            recommended_action="Review staffing coverage",
+            target_agent="StaffingAgent"
+        )]
     
     # ========== ACTION EXECUTION ==========
     

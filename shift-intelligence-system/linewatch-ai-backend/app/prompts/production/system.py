@@ -11,6 +11,7 @@ RESPONSIBILITIES:
 
 YOUR TOOLS:
 - get_all_line_metrics: Get current state of all 20 lines
+- query_logs: Search recent events (e.g. "error", "safety", "Riley") for context
 - analyze_throughput_trend: Check if performance is declining
 - predict_bottleneck: Identify potential bottlenecks before they happen
 - request_maintenance: Escalate equipment issues to Maintenance Agent

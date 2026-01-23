@@ -294,7 +294,7 @@ async def generate_hypotheses_node(state: HypothesisMarketState) -> Dict[str, An
     from app.agents.maintenance.maintenance_agent import MaintenanceAgent
     from app.agents.orchestrator.orchestrator import MasterOrchestrator
     
-    # Context for agents
+    # Context for Orchestrator to analyze
     signal = {
         "description": state["signal_description"],
         "data": state.get("signal_data", {}),
@@ -303,59 +303,81 @@ async def generate_hypotheses_node(state: HypothesisMarketState) -> Dict[str, An
     
     hypotheses = []
     
-    # CRITICAL FIX: Select only RELEVANT agents based on event type
-    def select_agents_by_event(description: str) -> list[str]:
-        """Keyword-based agent selection - only call agents relevant to the event."""
-        desc_lower = description.lower()
+    # STEP 1: Orchestrator analyzes and decides which specialist agents to consult
+    logger.info(f"🎯 Orchestrator analyzing: {signal['description']}")
+    
+    orch = get_cached_agent(MasterOrchestrator)
+    
+    # Ask Orchestrator to decide delegation strategy
+    delegation_prompt = f"""
+EVENT: {signal['description']}
+DATA: {str(signal['data'])[:500]}
+
+You are the Master Orchestrator. Analyze this event and decide which specialist agents should investigate.
+
+Available agents:
+- ProductionAgent: Line performance, throughput, equipment efficiency
+- MaintenanceAgent: Equipment health, breakdowns, repairs
+- StaffingAgent: Workforce issues, fatigue, breaks, coverage
+- ComplianceAgent: Safety violations, regulatory issues, quality standards
+
+Respond ONLY with a JSON array of agent names to consult, like:
+["ProductionAgent", "MaintenanceAgent"]
+
+If it's a fire/safety issue: ComplianceAgent + ProductionAgent
+If it's a breakdown: MaintenanceAgent (+ ProductionAgent if impacting production)
+If it's staffing/fatigue: StaffingAgent
+"""
+
+    # Use Orchestrator's LLM to decide
+    try:
+        from langchain_core.messages import HumanMessage
+        await orch._ensure_agent_initialized()
+        result = await orch.agent.ainvoke(
+            {"messages": [HumanMessage(content=delegation_prompt)]},
+            config={"configurable": {"thread_id": f"delegation-{state['signal_id']}"}}
+        )
         
-        # Mechanical failures → Maintenance only
-        if any(w in desc_lower for w in ["cylinder", "breakdown", "jam", "mechanical", "stuck", "belt"]):
-            return ["Maintenance"]
+        response_text = result["messages"][-1].content
+        if isinstance(response_text, list):
+            response_text = str(response_text)
         
-        # Safety events → Compliance + Production (for shutdown)
-        elif any(w in desc_lower for w in ["smoke", "fire", "safety", "violation", "alarm", "restricted"]):
-            return ["Compliance", "Production"]
-        
-        # Quality issues → Production + Compliance
-        elif any(w in desc_lower for w in ["defect", "quality", "scrap", "rejection", "variance"]):
-            return ["Production", "Compliance"]
-        
-        # Workforce issues → Staffing only
-        elif any(w in desc_lower for w in ["fatigue", "staffing", "operator", "shift", "break"]):
-            return ["Staffing"]
-        
-        # Default: Production + Maintenance (most common)
+        # Parse JSON from response
+        import json, re
+        json_match = re.search(r'\[(.*?)\]', response_text, re.DOTALL)
+        if json_match:
+            selected_agent_names = json.loads(json_match.group(0))
         else:
-            return ["Production", "Maintenance"]
+            # Fallback if Orchestrator doesn't format correctly
+            logger.warning("Orchestrator didn't return valid JSON, using default agents")
+            selected_agent_names = ["ProductionAgent", "MaintenanceAgent"]
+            
+    except Exception as e:
+        logger.error(f"Orchestrator delegation failed: {e}, using default agents")
+        selected_agent_names = ["ProductionAgent", "MaintenanceAgent"]
     
-    # Select relevant agents based on event description
-    selected_agent_names = select_agents_by_event(signal["description"])
-    logger.info(f"🎯 Selected agents for investigation: {selected_agent_names}")
+    logger.info(f"🎯 Orchestrator selected agents: {selected_agent_names}")
     
-    # 1. Map agent names to instances
+    # STEP 2: Call only the selected specialist agents
     agent_map = {
-        "Production": get_cached_agent(ProductionAgent),
-        "Staffing": get_cached_agent(StaffingAgent),
-        "Compliance": get_cached_agent(ComplianceAgent),
-        "Maintenance": get_cached_agent(MaintenanceAgent)
+        "ProductionAgent": get_cached_agent(ProductionAgent),
+        "StaffingAgent": get_cached_agent(StaffingAgent),
+        "ComplianceAgent": get_cached_agent(ComplianceAgent),
+        "MaintenanceAgent": get_cached_agent(MaintenanceAgent)
     }
     
-    # 2. Get only the relevant agents
     agents = [agent_map[name] for name in selected_agent_names if name in agent_map]
     
-    # 2. Solicit hypotheses from all agents in parallel
+    # STEP 3: Gather hypotheses from selected agents in parallel
     import asyncio
     
     tasks = []
     for agent in agents:
-        # Optimization: Filter context to reduce token usage per agent
-        # We pass the full signal data to the filter
         filtered_data = agent.filter_context(signal["data"])
-        
-        # Create agent-specific signal copy with filtered data
         agent_signal = signal.copy()
         agent_signal["data"] = filtered_data
         
+        logger.info(f"📣 Orchestrator delegating to {agent.agent_name}...")
         tasks.append(agent.generate_hypotheses(agent_signal))
 
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -366,16 +388,8 @@ async def generate_hypotheses_node(state: HypothesisMarketState) -> Dict[str, An
         elif isinstance(result, Exception):
             logger.error(f"Agent failed to generate hypotheses: {result}")
 
-    # 3. Master Orchestrator creates a synthesis/counterfactual hypothesis
-    # if specific frameworks are requested (e.g. Counterfactual)
-    if "COUNTERFACTUAL" in state.get("signal_data", {}).get("applicable_frameworks", []):
-        orch = MasterOrchestrator()
-        orch_hypos = await orch.generate_hypotheses(signal)
-        hypotheses.extend(orch_hypos)
-    
     # Checks for empty results
     if not hypotheses:
-        # Fallback to generic generation if agents return nothing
         logger.warning("No hypotheses from agents - falling back to generic generation")
         from app.hypothesis import create_hypothesis
         hypotheses.append(create_hypothesis(
@@ -539,6 +553,7 @@ async def gather_evidence_node(state: HypothesisMarketState) -> Dict[str, Any]:
         })
         
         # 2. Execute REAL tool (query actual simulation state)
+        from app.tools.analysis import metrics_tools  # Fix for NameError
         from app.tools.analysis.metrics_tools import (
             get_line_health, get_oee_metrics, get_line_output, 
             get_crew_status, get_sensor_reading
