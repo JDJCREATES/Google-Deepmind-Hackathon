@@ -13,22 +13,27 @@ export function UsageTimer() {
     can_run: true
   });
 
+
   useEffect(() => {
-    // Poll server every 1 second for live accurate countdown
-    const fetchUsage = async () => {
-      try {
-        const res = await fetch('http://localhost:8000/api/simulation/usage');
-        const data = await res.json();
-        setStats(data);
-      } catch (error) {
-        console.error('Failed to fetch usage stats:', error);
-      }
-    };
+    // PERFORMANCE: Delay polling until after initial page load
+    const startPolling = setTimeout(() => {
+      const fetchUsage = async () => {
+        try {
+          const res = await fetch('http://localhost:8000/api/simulation/usage');
+          const data = await res.json();
+          setStats(data);
+        } catch (error) {
+          console.error('Failed to fetch usage stats:', error);
+        }
+      };
 
-    fetchUsage(); // Initial fetch
-    const interval = setInterval(fetchUsage, 1000); // Poll every 1 second
+      fetchUsage(); // Initial fetch
+      const interval = setInterval(fetchUsage, 1000); // Poll every 1 second
 
-    return () => clearInterval(interval);
+      return () => clearInterval(interval);
+    }, 2000); // Wait 2 seconds before starting
+
+    return () => clearTimeout(startPolling);
   }, []);
 
   const remaining = Math.floor(stats.remaining_seconds);

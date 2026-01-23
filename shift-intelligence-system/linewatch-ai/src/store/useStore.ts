@@ -354,6 +354,11 @@ export const useStore = create<State>()(
     },
 
     fetchLayout: async () => {
+        // PERFORMANCE: Don't refetch if we already have layout data
+        if (get().layout) {
+            return;
+        }
+        
         set({ isLoading: true });
         try {
             const data = await api.layout.get();

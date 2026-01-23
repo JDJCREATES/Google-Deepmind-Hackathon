@@ -229,13 +229,13 @@ const ZoneComp: React.FC<{ zone: any }> = ({ zone }) => {
             />
             <Text
                 text={zone.label.toUpperCase()}
-                fontSize={10}
+                fontSize={14}
                 fontFamily="Inter, sans-serif"
                 fill={zone.color}
                 y={8}
                 x={8}
                 fontStyle="600"
-                opacity={0.8}
+                opacity={0.9}
             />
         </Group>
     );
@@ -246,15 +246,15 @@ const ConveyorBoxComp: React.FC<{ box: ConveyorBox }> = ({ box }) => {
         <Rect
             x={box.x}
             y={box.y}
-            width={14}
-            height={14}
+            width={20}
+            height={20}
             fill={box.color}
             stroke="#1E293B"
-            strokeWidth={1}
-            cornerRadius={2}
+            strokeWidth={1.5}
+            cornerRadius={3}
             shadowColor={box.color}
-            shadowBlur={4}
-            shadowOpacity={0.4}
+            shadowBlur={6}
+            shadowOpacity={0.5}
         />
     );
 };
@@ -268,12 +268,12 @@ const WarehouseInventoryDisplay: React.FC<{ inventory: WarehouseInventory }> = (
     
     return (
         <Group x={baseX} y={baseY}>
-            <Text text="INVENTORY" fontSize={8} fontFamily="Inter, sans-serif" fill="#F59E0B" fontStyle="600" />
-            <Text text={`Total: ${totalBoxes}`} fontSize={9} fontFamily="JetBrains Mono, monospace" fill="#E2E8F0" y={12} />
+            <Text text="INVENTORY" fontSize={12} fontFamily="Inter, sans-serif" fill="#F59E0B" fontStyle="600" />
+            <Text text={`Total: ${totalBoxes}`} fontSize={13} fontFamily="JetBrains Mono, monospace" fill="#E2E8F0" y={16} />
             {products.map(([type, count], i) => (
-                <Group key={type} y={28 + i * 16}>
-                    <Circle radius={3} fill={PRODUCT_COLORS[type] || '#FFF'} y={4} />
-                    <Text text={`${type.split('_')[1]?.toUpperCase() || type}: ${count}`} x={8} fontSize={9} fill="#94A3B8" fontFamily="JetBrains Mono, monospace" />
+                <Group key={type} y={36 + i * 20}>
+                    <Circle radius={5} fill={PRODUCT_COLORS[type] || '#FFF'} y={6} />
+                    <Text text={`${type.split('_')[1]?.toUpperCase() || type}: ${count}`} x={14} fontSize={13} fill="#94A3B8" fontFamily="JetBrains Mono, monospace" />
                 </Group>
             ))}
         </Group>

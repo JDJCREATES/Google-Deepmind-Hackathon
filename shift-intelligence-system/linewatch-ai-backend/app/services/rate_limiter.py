@@ -25,6 +25,9 @@ class RateLimiter:
     Thread-safe for single-process deployments. Persistent to JSON file.
     """
     
+    # DEV MODE: Whitelist for unlimited testing (only localhost)
+    DEV_WHITELIST = {"127.0.0.1"}  # Only your local IP, no remote access
+    
     def __init__(self):
         # {ip: {"daily_seconds_used": float, "last_reset": datetime, "last_inject": datetime, "session_start": datetime}}
         self.usage: Dict[str, Dict] = {}
@@ -76,6 +79,11 @@ class RateLimiter:
         Returns:
             (can_run, remaining_seconds): Can this IP start/continue simulation?
         """
+        # DEV MODE: Bypass for whitelisted IPs (localhost only)
+        if ip in self.DEV_WHITELIST:
+            logger.info(f"🔓 DEV MODE: IP {ip} has unlimited runtime")
+            return (True, 999999)  # Unlimited
+        
         self._reset_if_new_day(ip)
         
         used = self.usage.get(ip, {}).get("daily_seconds_used", 0)
@@ -95,6 +103,10 @@ class RateLimiter:
         Returns:
             (can_inject, cooldown_remaining): Can inject? How long to wait?
         """
+        # DEV MODE: Bypass for whitelisted IPs
+        if ip in self.DEV_WHITELIST:
+            return (True, 0)  # No cooldown
+        
         if ip not in self.usage:
             return (True, 0)
         

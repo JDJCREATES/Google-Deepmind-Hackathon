@@ -141,7 +141,7 @@ const MachineStack: React.FC<MachineStackProps> = ({ machine, productionState })
                 y={bodyY + machineH + 5} 
                 width={machineW} 
                 align="center" 
-                fontSize={10} 
+                fontSize={12} 
                 fill="#CBD5E1" 
                 fontFamily="Inter, sans-serif"
             />
