@@ -141,10 +141,15 @@ async def install_camera(location: Dict[str, float], camera_type: str = "visual"
     # Generate camera ID
     new_camera_id = f"CAM-{len(cameras) + 1:02d}"
     
-    # Create camera object
+    # Create camera object (MATCHING layout structure for frontend compatibility)
     new_camera = {
         "id": new_camera_id,
-        "position": location,
+        "label": new_camera_id,
+        "x": location["x"],
+        "y": location["y"],
+        "rotation": 0,      # Default rotation
+        "fov": 80,          # Default FOV
+        "range": 200,       # Default range
         "type": camera_type,
         "status": "active",
         "installed_at": simulation.simulation_hours

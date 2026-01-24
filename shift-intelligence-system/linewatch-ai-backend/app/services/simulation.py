@@ -331,6 +331,7 @@ class SimulationService:
         self.cameras = self._initialize_cameras()
         self.conveyors = self.layout["conveyors"]
         self.conveyor_boxes = [] # Boxes on conveyor
+        self.evacuation_active = False # Track emergency state
         
         # =================================================================
         # ASYNC TASK TRACKING (for proper cancellation)
@@ -632,6 +633,7 @@ class SimulationService:
         self._initialize_production_state()
         self.conveyor_boxes.clear()
         self.next_box_id = 1
+        
         self.warehouse_inventory = {pt: 0 for pt in PRODUCT_CATALOG}
         self.total_uptime_minutes = 0.0
         
@@ -659,7 +661,9 @@ class SimulationService:
         if self.is_running:
             return
         
-        self._reset_state()
+        # PERSISTENCE ENABLED: Removed _reset_state() so inventory/health persists across stops.
+        # State is only cleared on full server restart or manual clean.
+        
         self.is_running = True
         self.sim_task = asyncio.create_task(self._run_loop())
         logger.info("🎬 Simulation Service STARTED (Live Production Mode)")
