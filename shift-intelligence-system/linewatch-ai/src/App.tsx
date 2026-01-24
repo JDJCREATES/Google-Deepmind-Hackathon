@@ -1,5 +1,5 @@
 
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { HashRouter, Routes, Route } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 import DashboardPage from './pages/DashboardPage';
 
@@ -14,7 +14,7 @@ const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
  */
 function App() {
   return (
-    <BrowserRouter basename={import.meta.env.BASE_URL}>
+    <HashRouter>
       <Routes>
         <Route path="/" element={<DashboardPage />} />
         <Route 
@@ -26,7 +26,7 @@ function App() {
           } 
         />
       </Routes>
-    </BrowserRouter>
+    </HashRouter>
   );
 }
 
