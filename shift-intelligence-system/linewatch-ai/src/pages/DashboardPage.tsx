@@ -6,7 +6,7 @@ import FloorMap from '../components/FloorMap';
 import HierarchicalAgentGraph from '../components/HierarchicalAgentGraph';
 import AgentActivityLog from '../components/AgentActivityLog';
 import { UsageTimer } from '../components/UsageTimer';
-import { FaPlay, FaStop, FaBolt, FaFlask, FaIndustry, FaChartLine, FaList, FaProjectDiagram } from 'react-icons/fa';
+import { FaPlay, FaStop, FaBolt, FaIndustry, FaChartLine, FaList, FaProjectDiagram } from 'react-icons/fa';
 import clsx from 'clsx';
 import { api } from '../services/api';
 
@@ -143,12 +143,14 @@ export default function DashboardPage() {
                 label={<span className="hidden md:inline">ANALYTICS</span>}
                 variant="default"
             />
-            <ActionButton 
-                onClick={() => api.simulation.injectEvent("fire")}
-                icon={<FaBolt />} 
-                label={<span className="hidden md:inline">INJECT</span>}
-                variant="danger"
-            />
+            {simStatus?.running && (
+                <ActionButton 
+                    onClick={() => api.simulation.injectEvent("fire")}
+                    icon={<FaBolt />} 
+                    label={<span className="hidden md:inline">INJECT</span>}
+                    variant="danger"
+                />
+            )}
             <ActionButton 
                 onClick={handleToggleSimulation}
                 icon={simStatus?.running ? <FaStop /> : <FaPlay />} 
