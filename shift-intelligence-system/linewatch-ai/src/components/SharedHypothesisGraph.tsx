@@ -8,6 +8,7 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { useStore } from '../store/useStore';
+import { config } from '../config';
 import axios from 'axios';
 
 const SharedHypothesisGraph: React.FC = () => {
@@ -20,7 +21,7 @@ const SharedHypothesisGraph: React.FC = () => {
     useEffect(() => {
         const fetchAndLayout = async () => {
             try {
-                const response = await axios.get('http://localhost:8000/api/graph/structure');
+                const response = await axios.get(`${config.API_URL}/api/graph/structure`);
                 const { nodes: rawNodes, edges: rawEdges } = response.data;
                 
                 const layoutedNodes: any[] = [];

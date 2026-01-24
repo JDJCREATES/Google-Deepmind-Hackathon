@@ -61,10 +61,14 @@ try:
     )
     
     # Configure CORS
-    # Configure CORS - RELAXED FOR DEVELOPMENT
+    # Configure CORS - RESTRICTED FOR SECURITY
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"], # Allow all origins to fix 403 Forbidden in dev
+        allow_origins=[
+            "https://jdjcreates.github.io",  # Production Frontend
+            "http://localhost:5173",         # Local Vite Dev
+            "http://localhost:8000",         # Local FastAPI Docs
+        ],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

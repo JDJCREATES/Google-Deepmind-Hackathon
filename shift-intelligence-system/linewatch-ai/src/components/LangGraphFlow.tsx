@@ -8,6 +8,7 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { useStore } from '../store/useStore';
+import { config } from '../config';
 import axios from 'axios';
 
 // Node positioning using Dagre layout algorithm (simplified)
@@ -143,7 +144,7 @@ const LangGraphFlow: React.FC = () => {
     useEffect(() => {
         const fetchGraphStructure = async () => {
             try {
-                const response = await axios.get('http://localhost:8000/api/graph/structure');
+                const response = await axios.get(`${config.API_URL}/api/graph/structure`);
                 const { nodes: rawNodes, edges: rawEdges } = response.data;
                 
                 // Layout nodes
@@ -173,7 +174,7 @@ const LangGraphFlow: React.FC = () => {
     useEffect(() => {
         if (logs.length === 0) return;
         
-        const latestLog = logs[0].toLowerCase();
+        const latestLog = logs[0].description.toLowerCase();
         
         // Map log messages to node IDs
         type NodeMapping = Record<string, string>;

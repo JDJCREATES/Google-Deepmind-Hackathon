@@ -137,7 +137,7 @@ export default function DashboardPage() {
         {/* Action Buttons - Responsive */}
         <div className="flex items-center gap-1 md:gap-2">
             <ActionButton 
-                onClick={() => window.open('/analytics', '_blank')}
+                onClick={() => window.open('#/analytics', '_blank')}
                 icon={<FaChartLine />} 
                 label={<span className="hidden md:inline">ANALYTICS</span>}
                 variant="default"

@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { 
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  AreaChart, Area, BarChart, Bar
 } from 'recharts';
 import { config } from '../config';
 
@@ -65,7 +66,7 @@ export default function AnalyticsPage() {
   useEffect(() => {
     const fetchSessions = async () => {
         try {
-            const res = await fetch('http://localhost:8000/api/experiment/sessions');
+            const res = await fetch(`${API_BASE}/experiment/sessions`);
             const json = await res.json();
             setSessions(json);
             
@@ -91,7 +92,7 @@ export default function AnalyticsPage() {
     const fetchStats = async () => {
         setLoading(true);
         try {
-            const res = await fetch(`http://localhost:8000/api/experiment/stats?limit=1000&filename=${selectedSession}`);
+            const res = await fetch(`${API_BASE}/experiment/stats?limit=1000&filename=${selectedSession}`);
             const json = await res.json();
             setData(json);
         } catch (e) {
@@ -119,10 +120,10 @@ export default function AnalyticsPage() {
         setLearningLoading(true);
         try {
             const [statsRes, insightsRes, historyRes, accuracyRes] = await Promise.all([
-                fetch('http://localhost:8000/api/learning/stats'),
-                fetch('http://localhost:8000/api/learning/insights'),
-                fetch('http://localhost:8000/api/learning/policy-history'),
-                fetch('http://localhost:8000/api/learning/accuracy-over-time'),
+                fetch(`${API_BASE}/learning/stats`),
+                fetch(`${API_BASE}/learning/insights`),
+                fetch(`${API_BASE}/learning/policy-history`),
+                fetch(`${API_BASE}/learning/accuracy-over-time`),
             ]);
             
             const stats = await statsRes.json();
@@ -222,7 +223,7 @@ export default function AnalyticsPage() {
               <MetricCard label="Agent Cycles" value={data.length.toString()} color="text-stone-400" />
               
               <a 
-                  href={`http://localhost:8000/api/experiment/download?filename=${selectedSession}`} 
+                  href={`${API_BASE}/experiment/download?filename=${selectedSession}`} 
                   target="_blank"
                   className="flex items-center gap-2 bg-stone-800 hover:bg-stone-700 text-stone-300 px-4 py-2 rounded text-sm font-semibold border border-stone-700 transition"
                   download
@@ -366,7 +367,7 @@ export default function AnalyticsPage() {
                                   <YAxis stroke="#57534e" tick={{fontSize: 10}} domain={[0, 1]} tickFormatter={(v) => `${(v*100).toFixed(0)}%`} />
                                   <Tooltip 
                                       contentStyle={{backgroundColor: '#1c1917', borderColor: '#44403c', fontSize: '12px'}} 
-                                      formatter={(value: number) => [`${(value*100).toFixed(1)}%`, 'Accuracy']}
+                                      formatter={(value: any) => [`${(value*100).toFixed(1)}%`, 'Accuracy']}
                                   />
                                   <Line type="monotone" dataKey="accuracy" name="Accuracy" stroke="#a855f7" strokeWidth={3} dot={{ fill: '#a855f7', strokeWidth: 2 }} />
                               </LineChart>

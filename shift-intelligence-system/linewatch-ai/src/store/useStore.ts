@@ -372,7 +372,7 @@ export const useStore = create<State>()(
     connectWebSocket: () => {
         if (get().socket?.readyState === WebSocket.OPEN) return;
 
-        const wsUrl = config.WS_URL;
+        const wsUrl = `${config.WS_URL}/ws/stream`;
         
         console.log('Connecting to WebSocket:', wsUrl);
         const socket = new WebSocket(wsUrl);
