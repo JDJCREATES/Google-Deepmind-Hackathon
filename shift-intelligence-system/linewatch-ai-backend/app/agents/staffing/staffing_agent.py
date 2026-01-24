@@ -172,43 +172,47 @@ STEPS:
 2. Use check_fatigue_levels() to assess operator states
 3. Generate SPECIFIC hypothesis about staffing impact
 
-Respond in JSON:
-{{
-    "description": "Specific staffing issue (e.g. 'Line 3-6 unattended due to Casey on break, no coverage assigned')",
-    "confidence": 0.85,
-    "recommended_action": "Specific action (e.g. 'Reassign Riley to cover Lines 3-6 immediately')",
-    "urgency": 8.0
-}}
+Respond with a hypothesis describing the staffing issue, confidence, recommended action, and urgency.
 
 BE SPECIFIC. Name operators, cite fatigue percentages, identify coverage gaps.
 """
         
         try:
+            # BROADCAST to frontend
+            from app.services.websocket import manager
+            from datetime import datetime
+            await manager.broadcast({
+                "type": "agent_thinking",
+                "data": {
+                    "agent": "STAFFING",
+                    "thought": f"Checking workforce coverage: {signal_desc[:80]}...",
+                    "timestamp": datetime.now().isoformat()
+                }
+            })
+            
             await self._ensure_agent_initialized()
-            result = await self.agent.ainvoke(
-                {"messages": [HumanMessage(content=investigation_prompt)]},
+
+            # Use structured output for reliable parsing
+            from app.graphs.nodes import AgentHypothesisResponse
+            # MUST use .llm, not .agent (which is a graph)
+            structured_agent = self.llm.with_structured_output(AgentHypothesisResponse)
+
+            result = await structured_agent.ainvoke(
+                [HumanMessage(content=investigation_prompt)],
                 config={"configurable": {"thread_id": f"staff-hypo-{uuid4().hex[:6]}"}}
             )
             
-            response_text = result["messages"][-1].content
-            if isinstance(response_text, list):
-                response_text = str(response_text)
-            
-            import json, re
-            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
-            if json_match:
-                hypo_data = json.loads(json_match.group(0))
-                return [create_hypothesis(
-                    framework=HypothesisFramework.TOC,
-                    hypothesis_id=f"H-STAFF-{uuid4().hex[:6]}",
-                    description=hypo_data.get("description", signal_desc),
-                    initial_confidence=hypo_data.get("confidence", 0.75),
-                    impact=8.0,
-                    urgency=hypo_data.get("urgency", 7.0),
-                    proposed_by=self.agent_name,
-                    recommended_action=hypo_data.get("recommended_action", "Optimize staffing"),
-                    target_agent="StaffingAgent"
-                )]
+            return [create_hypothesis(
+                framework=HypothesisFramework.TOC,
+                hypothesis_id=f"H-STAFF-{uuid4().hex[:6]}",
+                description=result.description,
+                initial_confidence=result.confidence,
+                impact=8.0,
+                urgency=result.urgency,
+                proposed_by=self.agent_name,
+                recommended_action=result.recommended_action,
+                target_agent="StaffingAgent"
+            )]
         except Exception as e:
             self.logger.error(f"StaffingAgent investigation failed: {e}")
         

@@ -22,6 +22,16 @@ def setup_logging(level: str = "INFO"):
         colorize=True,
     )
     
+    # Filter out uvicorn access logs for the polling endpoint
+    # This handles the standard logging module which Uvicorn uses
+    import logging
+    class EndpointFilter(logging.Filter):
+        def filter(self, record: logging.LogRecord) -> bool:
+            return record.getMessage().find("GET /api/simulation/usage") == -1
+
+    # Apply filter to uvicorn loggers that might be active
+    logging.getLogger("uvicorn.access").addFilter(EndpointFilter())
+    
     return logger
 
 

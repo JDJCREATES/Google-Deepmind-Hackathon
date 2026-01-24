@@ -122,43 +122,47 @@ STEPS:
 2. Use get_all_line_metrics() to see current performance
 3. Generate SPECIFIC hypothesis about the impact
 
-Respond in JSON:
-{{
-    "description": "Specific production impact (e.g. 'Line 11 shutdown causing 20% throughput loss, $500/hr revenue impact')",
-    "confidence": 0.8,
-    "recommended_action": "Specific action (e.g. 'Emergency shutdown Line 11, reroute to Line 12')",
-    "urgency": 9.0
-}}
+Respond with a hypothesis describing the production impact, confidence, recommended action, and urgency.
 
 BE SPECIFIC. Quote metrics, revenue impact, downtime estimates.
 """
         
         try:
+            # BROADCAST to frontend
+            from app.services.websocket import manager
+            from datetime import datetime
+            await manager.broadcast({
+                "type": "agent_thinking",
+                "data": {
+                    "agent": "PRODUCTION",
+                    "thought": f"Analyzing production impact: {signal_desc[:80]}...",
+                    "timestamp": datetime.now().isoformat()
+                }
+            })
+            
             await self._ensure_agent_initialized()
-            result = await self.agent.ainvoke(
-                {"messages": [HumanMessage(content=investigation_prompt)]},
+
+            # Use structured output for reliable parsing
+            from app.graphs.nodes import AgentHypothesisResponse
+            # MUST use .llm, not .agent (which is a graph)
+            structured_agent = self.llm.with_structured_output(AgentHypothesisResponse)
+
+            result = await structured_agent.ainvoke(
+                [HumanMessage(content=investigation_prompt)],
                 config={"configurable": {"thread_id": f"prod-hypo-{uuid4().hex[:6]}"}}
             )
             
-            response_text = result["messages"][-1].content
-            if isinstance(response_text, list):
-                response_text = str(response_text)
-            
-            import json, re
-            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
-            if json_match:
-                hypo_data = json.loads(json_match.group(0))
-                return [create_hypothesis(
-                    framework=HypothesisFramework.RCA,
-                    hypothesis_id=f"H-PROD-{uuid4().hex[:6]}",
-                    description=hypo_data.get("description", signal_desc),
-                    initial_confidence=hypo_data.get("confidence", 0.7),
-                    impact=9.0,
-                    urgency=hypo_data.get("urgency", 8.0),
-                    proposed_by=self.agent_name,
-                    recommended_action=hypo_data.get("recommended_action", "Investigate production impact"),
-                    target_agent="ProductionAgent"
-                )]
+            return [create_hypothesis(
+                framework=HypothesisFramework.RCA,
+                hypothesis_id=f"H-PROD-{uuid4().hex[:6]}",
+                description=result.description,
+                initial_confidence=result.confidence,
+                impact=9.0,
+                urgency=result.urgency,
+                proposed_by=self.agent_name,
+                recommended_action=result.recommended_action,
+                target_agent="ProductionAgent"
+            )]
         except Exception as e:
             self.logger.error(f"ProductionAgent investigation failed: {e}")
         

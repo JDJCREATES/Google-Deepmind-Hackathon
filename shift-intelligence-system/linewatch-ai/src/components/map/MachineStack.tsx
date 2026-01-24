@@ -45,32 +45,22 @@ interface MachineStackProps {
 const MachineStack: React.FC<MachineStackProps> = ({ machine, productionState }) => {
     const { x, y, machine_w: machineW, machine_h: machineH, equip_w: equipW, equip_h: equipH, connector_h: connectorH = 20 } = machine;
     
-    // Status Logic
-    let statusColor = THEME.status.ok;
-    if (machine.health < 70) statusColor = THEME.status.warning;
-    if (machine.health < 40) statusColor = THEME.status.critical;
+    // Efficiency/Health Border Color
+    let efficiencyColor = THEME.status.ok; // Green (>= 80%)
+    if (machine.health < 80) efficiencyColor = '#3B82F6'; // Blue (60-80%)
+    if (machine.health < 60) efficiencyColor = THEME.status.warning; // Orange (40-60%)
+    if (machine.health < 40) efficiencyColor = THEME.status.critical; // Red (< 40%)
 
-    // Use production state if available, otherwise fallback to machine status
+    // Running Status (status indicator dot)
     const isRunning = productionState ? productionState.is_running : machine.status === 'running';
-    if (!isRunning && machine.health >= 40) statusColor = THEME.status.warning; // Stopped but not broken
+    const runningColor = isRunning ? '#22C55E' : '#64748B'; // Green running, gray stopped
     
     // Production Visuals
     const fillLevel = productionState ? productionState.fill_level : 0;
     const productType = productionState ? productionState.product_type : '';
-    // Use stored color or default
     const productFillColor = productionState?.product_color || '#3B82F6';
 
     // Calculate Y positions (stacking upwards)
-    // 1. Machine Body (Base)
-    // 2. Connector (Middle)
-    // 3. Equipment (Top)
-    
-    // Coordinates are top-left relative to Group(x,y)
-    // We want the BASE to be at (0, 0) relative to the group anchor?
-    // Actually, let's keep the layout simple: x,y is the top-left of the ENTIRE stack bounds?
-    // The layout service provides x,y. Let's assume it points to the top-left of the bounding box.
-    
-    // Relative offsets
     const equipX = (machineW - equipW) / 2;
     const equipY = 0;
     const connX = (machineW - 10) / 2;
@@ -124,13 +114,15 @@ const MachineStack: React.FC<MachineStackProps> = ({ machine, productionState })
                 fill={THEME.machine.connector} 
             />
 
-            {/* 1. MACHINE BODY (Base) */}
+            {/* 1. MACHINE BODY (Base) - NOW WITH EFFICIENCY BORDER */}
             <Rect 
                 x={bodyX} 
                 y={bodyY} 
                 width={machineW} 
                 height={machineH} 
                 fill={THEME.machine.body} 
+                stroke={efficiencyColor}
+                strokeWidth={3}
                 cornerRadius={2} 
             />
             
@@ -146,14 +138,14 @@ const MachineStack: React.FC<MachineStackProps> = ({ machine, productionState })
                 fontFamily="Inter, sans-serif"
             />
             
-            {/* Status Indicator Light */}
+            {/* Status Indicator Dot - Shows RUNNING state (not efficiency) */}
             <Circle 
                 x={machineW - 8} 
                 y={bodyY + 8} 
                 radius={4} 
-                fill={statusColor} 
-                shadowBlur={5} 
-                shadowColor={statusColor} 
+                fill={runningColor} 
+                shadowBlur={isRunning ? 5 : 0} 
+                shadowColor={runningColor} 
             />
         </Group>
     );

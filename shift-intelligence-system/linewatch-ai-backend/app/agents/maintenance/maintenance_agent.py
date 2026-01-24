@@ -130,37 +130,43 @@ BE SPECIFIC. Quote sensor readings, error codes, or failure patterns. NO generic
         
         # Call LLM to investigate
         try:
-            await self._ensure_agent_initialized()
-            from langchain_core.messages import HumanMessage
+            # BROADCAST to frontend: Agent is investigating
+            from app.services.websocket import manager
+            from datetime import datetime
+            await manager.broadcast({
+                "type": "agent_thinking",
+                "data": {
+                    "agent": "MAINTENANCE",
+                    "thought": f"Investigating equipment issue: {signal_desc[:80]}...",
+                    "timestamp": datetime.now().isoformat()
+                }
+            })
             
-            result = await self.agent.ainvoke(
-                {"messages": [HumanMessage(content=investigation_prompt)]},
+            await self._ensure_agent_initialized()
+            
+            # Use structured output for reliable parsing
+            from app.graphs.nodes import AgentHypothesisResponse
+            # MUST use .llm, not .agent (which is a graph)
+            structured_agent = self.llm.with_structured_output(AgentHypothesisResponse)
+            
+            from langchain_core.messages import HumanMessage
+            result = await structured_agent.ainvoke(
+                [HumanMessage(content=investigation_prompt)],
                 config={"configurable": {"thread_id": f"maint-hypo-{uuid4().hex[:6]}"}}
             )
             
-            response_text = result["messages"][-1].content
-            if isinstance(response_text, list):
-                response_text = str(response_text)
-            
-            # Parse JSON response
-            import json, re
-            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
-            if json_match:
-                hypo_data = json.loads(json_match.group(0))
-                
-                return [create_hypothesis(
-                    framework=HypothesisFramework.FMEA,
-                    hypothesis_id=f"H-MAINT-{uuid4().hex[:6]}",
-                    description=hypo_data.get("description", signal_desc),
-                    initial_confidence=hypo_data.get("confidence", 0.7),
-                    impact=10.0,
-                    urgency=hypo_data.get("urgency", 8.0),
-                    proposed_by=self.agent_name,
-                    recommended_action=hypo_data.get("recommended_action", f"dispatch_maintenance_crew(machine_id={line_id})"),
-                    target_agent="MaintenanceAgent"
-                )]
-            else:
-                self.logger.warning("MaintenanceAgent didn't return valid JSON, using fallback")
+            # result is now a Pydantic model, not dict
+            return [create_hypothesis(
+                framework=HypothesisFramework.FMEA,
+                hypothesis_id=f"H-MAINT-{uuid4().hex[:6]}",
+                description=result.description,
+                initial_confidence=result.confidence,
+                impact=10.0,
+                urgency=result.urgency,
+                proposed_by=self.agent_name,
+                recommended_action=result.recommended_action,
+                target_agent="MaintenanceAgent"
+            )]
                 
         except Exception as e:
             self.logger.error(f"MaintenanceAgent investigation failed: {e}")

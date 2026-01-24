@@ -130,6 +130,29 @@ class BeliefUpdateResult(BaseModel):
     )
     reasoning: str = Field(description="Explanation of the belief update calculation")
 
+class AgentHypothesisResponse(BaseModel):
+    """Structured response from agent generating a hypothesis."""
+    description: str = Field(
+        description="Specific technical hypothesis with data/metrics (e.g. 'Bearing wear causing motor overheat on Line 11 due to 400hrs runtime')"
+    )
+    confidence: float = Field(
+        description="Confidence level 0.0-1.0",
+        ge=0.0,
+        le=1.0
+    )
+    recommended_action: str = Field(
+        description="Specific action to take (e.g. 'dispatch_maintenance_crew(machine_id=11, issue=bearing_replacement)')"
+    )
+    urgency: float = Field(
+        description="Urgency rating 1.0-10.0",
+        ge=1.0,
+        le=10.0
+    )
+    reasoning: Optional[str] = Field(
+        description="Brief technical explanation",
+        default=""
+    )
+
 
 async def load_knowledge_node(state: HypothesisMarketState) -> Dict[str, Any]:
     """
@@ -278,6 +301,24 @@ async def generate_hypotheses_node(state: HypothesisMarketState) -> Dict[str, An
     # })
 
 
+class OrchestratorDelegation(BaseModel):
+    """Result of Orchestrator delegation decision."""
+    selected_agents: List[str] = Field(
+        description="List of agent names to consult (e.g. ['ProductionAgent', 'MaintenanceAgent'])",
+        min_items=1
+    )
+    reasoning: str = Field(description="Brief explanation of why these agents were selected")
+
+async def generate_hypotheses_node(state: HypothesisMarketState) -> Dict[str, Any]:
+    """
+    Generate initial hypotheses using specialized agents.
+    Broadcasting phase for graph visualization.
+    """
+    # Removed incorrect import - get_cached_agent is defined locally in this file
+    from app.services.websocket import manager
+    from datetime import datetime
+    
+    # Broadcast phase start
     await manager.broadcast({
         "type": "reasoning_phase",
         "data": {
@@ -321,9 +362,7 @@ Available agents:
 - StaffingAgent: Workforce issues, fatigue, breaks, coverage
 - ComplianceAgent: Safety violations, regulatory issues, quality standards
 
-Respond ONLY with a JSON array of agent names to consult, like:
-["ProductionAgent", "MaintenanceAgent"]
-
+Select the most relevant agents based on the event type.
 If it's a fire/safety issue: ComplianceAgent + ProductionAgent
 If it's a breakdown: MaintenanceAgent (+ ProductionAgent if impacting production)
 If it's staffing/fatigue: StaffingAgent
@@ -333,24 +372,18 @@ If it's staffing/fatigue: StaffingAgent
     try:
         from langchain_core.messages import HumanMessage
         await orch._ensure_agent_initialized()
-        result = await orch.agent.ainvoke(
-            {"messages": [HumanMessage(content=delegation_prompt)]},
+        
+        # Use structured output
+        # MUST use .llm, not .agent (which is a graph)
+        structured_orch = orch.llm.with_structured_output(OrchestratorDelegation)
+        
+        result = await structured_orch.ainvoke(
+            [HumanMessage(content=delegation_prompt)],
             config={"configurable": {"thread_id": f"delegation-{state['signal_id']}"}}
         )
         
-        response_text = result["messages"][-1].content
-        if isinstance(response_text, list):
-            response_text = str(response_text)
-        
-        # Parse JSON from response
-        import json, re
-        json_match = re.search(r'\[(.*?)\]', response_text, re.DOTALL)
-        if json_match:
-            selected_agent_names = json.loads(json_match.group(0))
-        else:
-            # Fallback if Orchestrator doesn't format correctly
-            logger.warning("Orchestrator didn't return valid JSON, using default agents")
-            selected_agent_names = ["ProductionAgent", "MaintenanceAgent"]
+        selected_agent_names = result.selected_agents
+        logger.info(f"🎯 Orchestrator reasoning: {result.reasoning}")
             
     except Exception as e:
         logger.error(f"Orchestrator delegation failed: {e}, using default agents")
