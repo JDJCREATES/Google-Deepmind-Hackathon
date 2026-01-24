@@ -1,9 +1,11 @@
-
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import axios from 'axios';
 import { 
-  LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  BarChart, Bar
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
+import { config } from '../config';
+
+const API_BASE = `${config.API_URL}/api`;
 import { FaDownload, FaFlask, FaSpinner, FaHistory, FaBrain, FaLightbulb, FaChartLine } from 'react-icons/fa';
 
 interface ExperimentSession {

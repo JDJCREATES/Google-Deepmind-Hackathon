@@ -1,4 +1,9 @@
-import { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import './UsageTimer.css';
+import { config } from '../config';
+
+const API_BASE = `${config.API_URL}/api`;
 
 interface UsageStats {
   remaining_seconds: number;

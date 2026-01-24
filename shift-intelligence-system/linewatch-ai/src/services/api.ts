@@ -1,7 +1,8 @@
 import axios from 'axios';
 import type { FloorLayout, SimulationStatus } from '../types';
+import { config } from '../config';
 
-const API_BASE = 'http://localhost:8000/api';
+const API_BASE = `${config.API_URL}/api`;
 
 export const api = {
     layout: {
@@ -22,4 +23,4 @@ export const api = {
 };
 
 // WebSocket URL
-export const WS_URL = 'ws://localhost:8000/ws/stream';
+export const WS_URL = `${config.WS_URL}/ws/stream`;
