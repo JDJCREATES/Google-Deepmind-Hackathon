@@ -55,11 +55,24 @@ const THEME = {
 };
 
 const PRODUCT_COLORS: Record<string, string> = {
-    widget_a: '#3B82F6',
-    widget_b: '#10B981',
-    gizmo_x: '#F59E0B',
-    gizmo_y: '#818CF8', // Indigo
-    part_z: '#8B5CF6',
+    // Current products
+    widget_a: '#3B82F6',   // Blue
+    widget_b: '#10B981',   // Green
+    gizmo_x: '#F59E0B',    // Amber
+    gizmo_y: '#818CF8',    // Indigo
+    part_z: '#8B5CF6',     // Purple
+    
+    // Missing products
+    chassis: '#A855F7',        // Purple-500
+    production_unit: '#EC4899', // Pink-500
+    component_x: '#06B6D4',    // Cyan-500
+    component_y: '#14B8A6',    // Teal-500
+    package: '#D946EF',        // Fuchsia-500
+    cargo: '#8B5CF6',          // Violet-500
+    
+    // Fallback/Generic - defaulting to Purple as requested
+    box: '#A855F7',            // Purple-500
+    default: '#A855F7'         // Purple-500 (Backup)
 };
 
 // =============================================================================
@@ -229,13 +242,17 @@ const ZoneComp: React.FC<{ zone: any }> = ({ zone }) => {
             />
             <Text
                 text={zone.label.toUpperCase()}
-                fontSize={14}
+                fontSize={12}
                 fontFamily="Inter, sans-serif"
                 fill={zone.color}
-                y={8}
-                x={8}
+                x={0}
+                y={0}
+                width={zone.width}
+                height={zone.height}
+                align="center"
+                verticalAlign="middle"
                 fontStyle="600"
-                opacity={0.9}
+                opacity={0.8}
             />
         </Group>
     );
@@ -260,22 +277,45 @@ const ConveyorBoxComp: React.FC<{ box: ConveyorBox }> = ({ box }) => {
 };
 
 const WarehouseInventoryDisplay: React.FC<{ inventory: WarehouseInventory }> = ({ inventory }) => {
+    // Only show products with count > 0
     const products = Object.entries(inventory).filter(([_, count]) => count > 0);
     const totalBoxes = Object.values(inventory).reduce((a, b) => a + b, 0);
     
+    // Position
     const baseX = 8;
     const baseY = 60;
     
     return (
         <Group x={baseX} y={baseY}>
             <Text text="INVENTORY" fontSize={12} fontFamily="Inter, sans-serif" fill="#F59E0B" fontStyle="600" />
-            <Text text={`Total: ${totalBoxes}`} fontSize={13} fontFamily="JetBrains Mono, monospace" fill="#E2E8F0" y={16} />
-            {products.map(([type, count], i) => (
-                <Group key={type} y={36 + i * 20}>
-                    <Circle radius={5} fill={PRODUCT_COLORS[type] || '#FFF'} y={6} />
-                    <Text text={`${type.split('_')[1]?.toUpperCase() || type}: ${count}`} x={14} fontSize={13} fill="#94A3B8" fontFamily="JetBrains Mono, monospace" />
-                </Group>
-            ))}
+            <Text text={`Total: ${totalBoxes}`} fontSize={11} fontFamily="JetBrains Mono, monospace" fill="#64748B" y={16} />
+            
+            <Group y={36}>
+                {products.map(([type, count], i) => (
+                    <Group key={type} y={i * 20}>
+                        {/* Single Colored Box */}
+                        <Rect
+                            width={12}
+                            height={12}
+                            fill={PRODUCT_COLORS[type] || PRODUCT_COLORS.default}
+                            cornerRadius={2}
+                            stroke="#1E293B"
+                            strokeWidth={1}
+                            y={1}
+                        />
+                        
+                        {/* Just the number */}
+                        <Text 
+                            text={`${count}`} 
+                            fontSize={12} 
+                            fill="#E2E8F0" 
+                            fontFamily="JetBrains Mono, monospace"
+                            x={18}
+                            y={0}
+                        />
+                    </Group>
+                ))}
+            </Group>
         </Group>
     );
 };
