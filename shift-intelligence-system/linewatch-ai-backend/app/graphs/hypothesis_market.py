@@ -253,25 +253,35 @@ async def run_hypothesis_market(
     
     # Ensure directory exists
     import os
-    os.makedirs(os.path.dirname(checkpoint_path) or ".", exist_ok=True)
     
     # Connection object to close later
     conn = None
     
     try:
+        # VERIFY API KEY FIRST - Fail early if missing
+        if not settings.google_api_key:
+            raise ValueError("Missing GOOGLE_API_KEY. Cannot run agent graph.")
+            
         # Create persistent aiosqlite connection
-        conn = await aiosqlite.connect(checkpoint_path)
-        
-        # MONKEY PATCH: LangGraph's AsyncSqliteSaver expects 'is_alive'
-        conn.is_alive = lambda: True
-        
-        # Create AsyncSqliteSaver
-        checkpointer = AsyncSqliteSaver(conn)
+        # SAFEGUARD: Wrap makedirs in try block for Read-Only containers
+        try:
+             os.makedirs(os.path.dirname(checkpoint_path) or ".", exist_ok=True)
+             conn = await aiosqlite.connect(checkpoint_path)
+             # MONKEY PATCH: LangGraph's AsyncSqliteSaver expects 'is_alive'
+             conn.is_alive = lambda: True
+             checkpointer = AsyncSqliteSaver(conn)
+             persistence_mode = "sqlite"
+        except Exception as db_err:
+             logger.warning(f"⚠️ Failed to initialize SQLite checkpointing: {db_err}. Falling back to MemorySaver.")
+             checkpointer = MemorySaver()
+             persistence_mode = "memory"
         
         # Compile graph using the checkpointer
         graph = compile_hypothesis_market(use_checkpointing=True, checkpointer=checkpointer)
         
         config = {"configurable": {"thread_id": thread_id}}
+        
+        logger.info(f"🚀 Executing Agent Graph (Persistence: {persistence_mode})...")
         
         # Run graph
         final_state = await graph.ainvoke(initial_state, config)
@@ -281,11 +291,9 @@ async def run_hypothesis_market(
         
     except Exception as e:
         logger.error(f"❌ Hypothesis market execution failed: {e}")
-        # Only fallback if absolutely necessary
-        logger.warning("⚠️ Falling back to in-memory execution")
-        graph = compile_hypothesis_market(use_checkpointing=True) # Defaults to MemorySaver
-        config = {"configurable": {"thread_id": thread_id}}
-        return await graph.ainvoke(initial_state, config)
+        import traceback
+        logger.error(traceback.format_exc())
+        return {"error": str(e)}
     finally:
         if conn:
             await conn.close()
