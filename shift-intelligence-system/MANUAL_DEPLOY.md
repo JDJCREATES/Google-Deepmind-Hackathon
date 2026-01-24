@@ -13,9 +13,9 @@
     *   **Repository**: Select your repo (`shift-intelligence-system` etc).
     *   **Click Next**.
 4.  **Build Configuration**:
-    - **Build Type**: Select **"Dockerfile"**.
-    - **Source location**: `/` (Leave as default).
-    - **Note**: I created a special `Dockerfile` in the root folder so this "default" setting now works perfectly. You don't need to change anything else!
+    - **Build Type**: Select **"Cloud Build configuration file (yaml or json)"**.
+    - **File location**: `/cloudbuild.yaml` (Default).
+    - **Note**: I put this file in the very top folder so Google will find it automatically. No paths to type!
     - Click **Save**.
 4.  **Service Settings**:
     *   **Service Name**: `linewatch-backend` (or whatever you want).
