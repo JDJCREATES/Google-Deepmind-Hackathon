@@ -553,7 +553,15 @@ class BaseAgent(ABC):
             await self._broadcast_thought(f"📋 Taking action: {actions_summary}", "agent_activity")
 
         # Determine if escalation needed
-        should_escalate = confidence < 0.7 or self._detect_critical_situation(context)
+        # DYNAMIC POLICY INTEGRATION: Use PolicyService instead of hardcoded values
+        from app.services.policy_service import policy_service
+        current_policy = policy_service.get_current_policy()
+        
+        # Override default threshold with policy value if available
+        act_threshold = current_policy.confidence_threshold_act or 0.7
+        # Note: We use policy thresholds here to drive behavior
+        
+        should_escalate = confidence < act_threshold or self._detect_critical_situation(context)
         escalation_reason = None
         if should_escalate:
             escalation_reason = self._build_escalation_reason(context, thoughts)

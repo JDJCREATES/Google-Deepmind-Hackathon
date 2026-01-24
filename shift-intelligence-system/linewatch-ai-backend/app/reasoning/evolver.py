@@ -179,6 +179,10 @@ Output as JSON with:
                 changes["discovered_criteria"]
             )
         
+        # ACTIVATE POLICY
+        from app.services.policy_service import policy_service
+        policy_service.update_policy(new_policy)
+        
         logger.info(
             f"✅ Policy evolved: v{current_policy.version} → v{new_policy.version}"
         )
