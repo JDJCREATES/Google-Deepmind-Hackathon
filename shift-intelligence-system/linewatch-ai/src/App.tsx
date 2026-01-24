@@ -14,7 +14,7 @@ const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
  */
 function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={import.meta.env.BASE_URL}>
       <Routes>
         <Route path="/" element={<DashboardPage />} />
         <Route 
