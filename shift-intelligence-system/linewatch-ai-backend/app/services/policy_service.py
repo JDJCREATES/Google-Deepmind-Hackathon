@@ -25,11 +25,25 @@ class PolicyService:
             return self._current_policy
         return self._create_default_policy()
 
-    def update_policy(self, new_policy: DecisionPolicy) -> None:
+    async def update_policy(self, new_policy: DecisionPolicy) -> None:
         """Update the active policy and persist to disk."""
         self._current_policy = new_policy
         self._save_policy()
         logger.info(f"🔄 Policy upgraded to {new_policy.version}")
+        
+        # Broadcast toast to frontend
+        try:
+            from app.services.websocket import manager
+            await manager.broadcast({
+                "type": "policy_update",
+                "data": {
+                    "version": new_policy.version,
+                    "insight": new_policy.policy_insights[-1] if new_policy.policy_insights else "Policy updated based on recent learning.",
+                    "timestamp": datetime.now().isoformat()
+                }
+            })
+        except Exception as e:
+            logger.warning(f"Failed to broadcast policy update: {e}")
 
     def _create_default_policy(self) -> DecisionPolicy:
         """Create a baseline default policy."""

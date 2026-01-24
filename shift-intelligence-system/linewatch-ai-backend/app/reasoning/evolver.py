@@ -101,37 +101,46 @@ class PolicyEvolver:
         suboptimal = memory.get_suboptimal_decisions()[-10:]
         
         prompt = f"""
-Analyze the decision policy and suggest improvements based on experience.
+You are the Chief AI Safety Officer for a 24/7 manufacturing facility.
+Your job is to EVOLVE the decision-making policy based on empirical evidence from RECENT OUTCOMES.
+
+OBJECTIVE:
+Analyze the decision history to optimize two competing goals:
+1. Operational Efficiency (Throughput, OEE)
+2. Safety & Compliance (Zero incidents, <1% violation rate)
 
 CURRENT POLICY (v{current_policy.version}):
-- confidence_threshold_act: {current_policy.confidence_threshold_act}
-- confidence_threshold_escalate: {current_policy.confidence_threshold_escalate}
-- framework_weights: {current_policy.framework_weights}
-- current_insights: {current_policy.policy_insights}
+- Confidence Threshold (To Act): {current_policy.confidence_threshold_act} 
+- Confidence Threshold (To Escalate): {current_policy.confidence_threshold_escalate}
+- Active Insights: {current_policy.policy_insights}
 
-RECENT DECISION OUTCOMES (last 30):
+DATA ANALYSIS:
 {self._format_replays(recent_replays)}
 
-SUBOPTIMAL DECISIONS (where alternative was better):
+SUBOPTIMAL DECISIONS (LEARNING OPPORTUNITIES):
 {self._format_replays(suboptimal)}
 
-STATISTICS:
-- Total decisions: {len(memory.replays)}
-- Optimal rate: {memory.get_stats()['accuracy_rate']:.1%}
+SAFETY GUARDRAILS (IMMUTABLE):
+- NEVER lower 'confidence_threshold_act' below 0.60.
+- NEVER raise 'confidence_threshold_escalate' above 0.85 (must remain sensitive to risks).
+- Changes must be INCREMENTAL (+/- 0.05 max per evolution) to ensure stability.
 
-Analyze patterns and suggest:
-1. Should confidence thresholds change? (with reasoning)
-2. Should framework weights change? (with reasoning)
-3. What new insights emerged from suboptimal decisions?
-4. Any new criteria discovered that should be tracked?
+INSTRUCTIONS:
+1. Analyze the 'Suboptimal Decisions'. Why did we fail?
+   - If we acted but failed: We were overconfident -> RAISE confidence_act threshold.
+   - If we escalated unnecessarily: We were underconfident -> LOWER confidence_act threshold.
+2. Analyze 'Framework Weights'.
+   - If safety incidents occurred: Increase 'FMEA' (Failure Mode Analysis) weight.
+   - If throughput lagged: Increase 'TOC' (Constraints) weight.
 
-Output as JSON with:
-- "confidence_threshold_act": new value or null
-- "confidence_threshold_escalate": new value or null  
-- "framework_weight_changes": {{framework: new_weight}} or {{}}
-- "new_insights": ["insight1", "insight2"]
-- "discovered_criteria": [{{name, description, weight}}] or []
-- "reasoning": explanation of changes
+OUTPUT FORMAT (JSON ONLY):
+{{
+    "confidence_threshold_act": <float or null>,
+    "confidence_threshold_escalate": <float or null>,
+    "framework_weight_changes": {{"RCA": <float>, "FMEA": <float>}},
+    "new_insights": ["<Short, punchy insight about production physics>"],
+    "reasoning": "<Explanation of why this change improves safety/efficiency>"
+}}
 """
 
         result = await self.llm.ainvoke(prompt)
@@ -181,7 +190,7 @@ Output as JSON with:
         
         # ACTIVATE POLICY
         from app.services.policy_service import policy_service
-        policy_service.update_policy(new_policy)
+        await policy_service.update_policy(new_policy)
         
         logger.info(
             f"✅ Policy evolved: v{current_policy.version} → v{new_policy.version}"
