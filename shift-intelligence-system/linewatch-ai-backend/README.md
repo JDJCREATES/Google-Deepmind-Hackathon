@@ -1,14 +1,33 @@
 # LineWatch AI Backend
 
-Production-grade shift intelligence multi-agent system powered by Google Gemini 3.
+**A Semantic Digital Twin for Intelligent Manufacturing**
 
-## Features
+LineWatch AI is a **digital-first planning and operational twin** that revolutionizes how factories respond to disruptions. Instead of static monitoring, LineWatch AI creates a living, breathing **Semantic Digital Twin (SDT)** of the production floor, powered by **Google Gemini 3 Flash**.
 
-- **Multi-Agent Orchestration**: Master Orchestrator coordinates specialized agents using LangGraph
-- **Gemini 3 Powered**: All agents leverage Gemini 3's reasoning capabilities for intelligent decision-making
-- **Real-time Monitoring**: 20 production lines tracked continuously
-- **Safety Camera Agent**: Computer vision integration for safety violation detection
-- **WebSocket Streaming**: Real-time agent activities and reasoning traces for frontend visualization
+By mirroring operational states (OEE, staffing, machine health) in real-time and applying **epistemic reasoning**, the system transforms reactive "alerts" into proactive "investigations," predicting failures and counterfactually simulating solutions before they are deployed.
+
+## Core Capabilities
+
+### 🏭 The Virtual Factory Floor (Digital Twin)
+LineWatch serves as a high-fidelity **Operational Twin**, providing:
+- **Real-Time State Synchronization**: Mirrors the exact state of 20 production lines, conveyor belts, and warehouse inventory.
+- **Physics-Informed Simulation**: Tracks entity movement, machine wear-and-tear, and production throughput with granular precision.
+- **Fog of War**: Simulates camera blind spots, forcing agents to "investigate" areas rather than having omniscient knowledge.
+
+### 🧠 Epistemic Reasoner (The "Brain")
+Unlike traditional dashboards, LineWatch AI *thinks* about the data:
+- **Hypothesis Market**: When a signal (e.g., vibration spike) is detected, specialized agents (Production, Maintenance, Staffing) bid on competing hypotheses.
+- **Counterfactual Simulation**: "What if we slow down Line 4?" Agents simulate interventions in the digital twin to validate outcomes before acting.
+- **Bayesian Belief Ups**: Agents rigorously update their confidence based on collected evidence, reducing false positives.
+
+### 🤖 Autonomous Agent Workforce
+- **Master Orchestrator**: The "Plant Manager" that coordinates specialized sub-agents using LangGraph.
+- **Production Agent**: Optimizes throughput and manages line speeds based on downstream bottlenecks.
+- **Maintenance Agent**: Predicts equipment failure using probabilistic models (e.g., "Bearing failure imminent (85%)").
+- **Safety Agent**: Uses vision-simulation to detect PPE violations and unsafe proximity in real-time.
+- **Staffing Agent**: Manages workforce fatigue and schedules breaks dynamically to maintain safety and morale.
+
+---
 
 ## Quick Start
 
@@ -26,45 +45,34 @@ cp .env.example .env
 pip install -e .
 ```
 
-### 3. Run the Server
+### 3. Run the Digital Twin Server
 
 ```bash
 uvicorn app.main:app --reload --port 8000
 ```
-
-or
-
-```bash
-python -m app.main
-```
+*Note: Includes automatic "Demo Mode" seeding for instant historical analytics.*
 
 ## Architecture
 
-### Department Model
-- 20 production lines (numbered 1-20)
-- Real-time throughput, efficiency, and health tracking
-- Temperature monitoring for cold storage compliance
-- Staff assignments per line
+### Epistemic Loop
+1. **Signal Detection**: "Line 4 temperature > 85°C"
+2. **Hypothesis Generation**: "Is it a motor fault? Or ambient heat?"
+3. **Evidence Gathering**: Agent dispatches a virtual technician to check sensors.
+4. **Belief Update**: "Motor vibration normal. Confidence in 'Ambient Heat' increases to 90%."
+5. **Action**: "Adjust HVAC settings." (Autonomous or Human-in-the-Loop)
 
-### Agents (To Be Finalized)
-- **Master Orchestrator**: Coordinates all subagents
-- **Production Agent**: Monitors line performance and bottlenecks
-- **Safety Camera Agent**: Watches for PPE violations, spills, unsafe proximity
-- **Compliance Agent**: Temperature and hygiene monitoring
-- **Maintenance Agent**: Predictive equipment maintenance
-- **Staffing Agent**: Coverage and fatigue tracking
-
-### Tools (To Be Designed)
-- Production monitoring tools
-- Camera/vision analysis tools
-- Compliance checking tools
-- Maintenance scheduling tools
+### Technology Stack
+- **Reasoning**: Google Gemini 3
+- **Orchestration**: LangGraph (Stateful Multi-Agent Workflows)
+- **Simulation**: Custom Discrete Event Simulation (Python)
+- **Communication**: Fast API / WebSockets (Streaming Thoughts)
+- **Persistence**: SQLite (with In-Memory Fallback for Cloud Run)
 
 ## API Endpoints
 
-- `GET /` - Service info
-- `GET /health` - Health check
-- (More endpoints coming after agent design)
+- `GET /` - Digital Twin Status
+- `GET /api/simulation/status` - Live Simulation Telemetry
+- `POST /api/simulation/event` - Inject Synthetic Events (Fire, Breakdown) for Stress Testing
 
 ## Development
 
@@ -78,7 +86,3 @@ Format code:
 black app/
 ruff check app/
 ```
-
-## Configuration
-
-See `.env.example` for all available settings.
