@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { api } from '../services/api';
+import { config } from '../config';
 
 // =============================================================================
 // TYPES
@@ -371,9 +372,7 @@ export const useStore = create<State>()(
     connectWebSocket: () => {
         if (get().socket?.readyState === WebSocket.OPEN) return;
 
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        // FIXED: Endpoint must match backend definition @app.websocket("/ws/stream")
-        const wsUrl = `${protocol}//${window.location.hostname}:8000/ws/stream`;
+        const wsUrl = config.WS_URL;
         
         console.log('Connecting to WebSocket:', wsUrl);
         const socket = new WebSocket(wsUrl);
