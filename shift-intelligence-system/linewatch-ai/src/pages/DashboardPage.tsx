@@ -13,7 +13,7 @@ import { api } from '../services/api';
 export default function DashboardPage() {
   const { connectWebSocket, isConnected, toggleSimulation, financials, kpi } = useStore();
   const [simStatus, setSimStatus] = useState<{running: boolean, uptime: number} | null>(null);
-  const [mobileTab, setMobileTab] = useState<'map' | 'logs' | 'graph'>('map');
+  const [mobileTab, setMobileTab] = useState<'logs' | 'graph'>('logs');
 
   const handleToggleSimulation = async () => {
     await toggleSimulation();
@@ -79,18 +79,18 @@ export default function DashboardPage() {
             <div className="flex flex-col items-center">
                 <span className="text-[8px] md:text-[10px] text-stone-500 font-mono tracking-wider">OEE</span>
                 <span className={`font-mono font-bold text-xs md:text-sm lg:text-lg leading-none tabular-nums ${
-                    kpi.oee >= 0.85 ? 'text-emerald-400' : kpi.oee >= 0.60 ? 'text-amber-400' : 'text-rose-400'
+                    (kpi?.oee ?? 1) >= 0.85 ? 'text-emerald-400' : (kpi?.oee ?? 1) >= 0.60 ? 'text-amber-400' : 'text-rose-400'
                 }`}>
-                    {(kpi.oee * 100).toFixed(0)}%
+                    {((kpi?.oee ?? 1) * 100).toFixed(0)}%
                 </span>
             </div>
             
             <div className="flex flex-col items-center">
                 <span className="text-[8px] md:text-[10px] text-stone-500 font-mono tracking-wider">SAFE</span>
                 <span className={`font-mono font-bold text-xs md:text-sm lg:text-lg leading-none tabular-nums ${
-                    kpi.safety_score >= 98 ? 'text-emerald-400' : 'text-rose-400'
+                    (kpi?.safety_score ?? 100) >= 98 ? 'text-emerald-400' : 'text-rose-400'
                 }`}>
-                    {kpi.safety_score.toFixed(0)}%
+                    {(kpi?.safety_score ?? 100).toFixed(0)}%
                 </span>
             </div>
         </div>
@@ -161,37 +161,40 @@ export default function DashboardPage() {
       {/* MAIN GRID - Responsive Layout */}
       <main className="flex-1 flex flex-col p-2 md:p-3 gap-2 md:gap-3 min-h-0 overflow-hidden">
         
-        {/* MOBILE: Tabbed View */}
+        {/* MOBILE: Persistent Map + Tabbed Details */}
         <div className="flex lg:hidden flex-col gap-2 flex-1 min-h-0">
+            
+            {/* Always Visible Map (Fixed height) */}
+            <div className="h-[40vh] min-h-[250px] shrink-0 flex flex-col bg-stone-900 border border-stone-800 rounded-md overflow-hidden">
+                <div className="px-2 py-1 bg-stone-900/50 flex items-center justify-between border-b border-stone-800/50">
+                    <div className="flex items-center gap-2">
+                         <FaIndustry className="text-amber-500 text-[10px]" />
+                         <span className="text-[10px] font-bold text-stone-400">LIVE FLOOR</span>
+                    </div>
+                </div>
+                <div className="flex-1 min-h-0 relative">
+                    <FloorMap />
+                </div>
+            </div>
+
             {/* Tab Navigation */}
             <div className="flex bg-stone-900 border border-stone-800 rounded p-1 shrink-0">
-                <button 
-                    onClick={() => setMobileTab('map')}
-                    className={`flex-1 py-2 text-xs font-bold rounded flex items-center justify-center gap-2 ${mobileTab === 'map' ? 'bg-stone-800 text-stone-200' : 'text-stone-500 hover:text-stone-300'}`}
-                >
-                    <FaIndustry /> FLOOR
-                </button>
                 <button 
                     onClick={() => setMobileTab('logs')}
                     className={`flex-1 py-2 text-xs font-bold rounded flex items-center justify-center gap-2 ${mobileTab === 'logs' ? 'bg-stone-800 text-stone-200' : 'text-stone-500 hover:text-stone-300'}`}
                 >
-                    <FaList /> LOGS
+                    <FaList /> LIVE LOGS
                 </button>
                 <button 
                     onClick={() => setMobileTab('graph')}
                     className={`flex-1 py-2 text-xs font-bold rounded flex items-center justify-center gap-2 ${mobileTab === 'graph' ? 'bg-stone-800 text-stone-200' : 'text-stone-500 hover:text-stone-300'}`}
                 >
-                    <FaProjectDiagram /> GRAPH
+                    <FaProjectDiagram /> AGENT GRAPH
                 </button>
             </div>
 
             {/* Mobile Content Area */}
             <div className="flex-1 min-h-0 relative flex flex-col">
-                {mobileTab === 'map' && (
-                    <div className="flex flex-col flex-1 min-h-0 bg-stone-900 border border-stone-800 rounded-md overflow-hidden">
-                        <FloorMap />
-                    </div>
-                )}
                 {mobileTab === 'logs' && (
                      <div className="flex-1 min-h-0">
                         <AgentActivityLog />
