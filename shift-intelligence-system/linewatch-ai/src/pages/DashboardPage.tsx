@@ -6,13 +6,14 @@ import FloorMap from '../components/FloorMap';
 import HierarchicalAgentGraph from '../components/HierarchicalAgentGraph';
 import AgentActivityLog from '../components/AgentActivityLog';
 import { UsageTimer } from '../components/UsageTimer';
-import { FaPlay, FaStop, FaBolt, FaFlask, FaIndustry, FaChartLine } from 'react-icons/fa';
+import { FaPlay, FaStop, FaBolt, FaFlask, FaIndustry, FaChartLine, FaList, FaProjectDiagram } from 'react-icons/fa';
 import clsx from 'clsx';
 import { api } from '../services/api';
 
 export default function DashboardPage() {
   const { connectWebSocket, isConnected, toggleSimulation, financials, kpi } = useStore();
   const [simStatus, setSimStatus] = useState<{running: boolean, uptime: number} | null>(null);
+  const [mobileTab, setMobileTab] = useState<'map' | 'logs' | 'graph'>('map');
 
   const handleToggleSimulation = async () => {
     await toggleSimulation();
@@ -160,28 +161,48 @@ export default function DashboardPage() {
       {/* MAIN GRID - Responsive Layout */}
       <main className="flex-1 flex flex-col p-2 md:p-3 gap-2 md:gap-3 min-h-0 overflow-hidden">
         
-        {/* MOBILE/TABLET: Stack everything vertically */}
-        <div className="flex lg:hidden flex-col gap-2 md:gap-3 flex-1 min-h-0">
-          {/* Floor Map */}
-          <div className="flex flex-col flex-1 min-h-0">
-            <div className="bg-stone-900 border border-stone-800 rounded-t-md px-2 md:px-3 py-1 md:py-1.5 flex items-center gap-2">
-                <FaIndustry className="text-amber-500 text-xs" />
-                <h2 className="font-semibold text-stone-300 text-xs tracking-wide">PRODUCTION FLOOR</h2>
+        {/* MOBILE: Tabbed View */}
+        <div className="flex lg:hidden flex-col gap-2 flex-1 min-h-0">
+            {/* Tab Navigation */}
+            <div className="flex bg-stone-900 border border-stone-800 rounded p-1 shrink-0">
+                <button 
+                    onClick={() => setMobileTab('map')}
+                    className={`flex-1 py-2 text-xs font-bold rounded flex items-center justify-center gap-2 ${mobileTab === 'map' ? 'bg-stone-800 text-stone-200' : 'text-stone-500 hover:text-stone-300'}`}
+                >
+                    <FaIndustry /> FLOOR
+                </button>
+                <button 
+                    onClick={() => setMobileTab('logs')}
+                    className={`flex-1 py-2 text-xs font-bold rounded flex items-center justify-center gap-2 ${mobileTab === 'logs' ? 'bg-stone-800 text-stone-200' : 'text-stone-500 hover:text-stone-300'}`}
+                >
+                    <FaList /> LOGS
+                </button>
+                <button 
+                    onClick={() => setMobileTab('graph')}
+                    className={`flex-1 py-2 text-xs font-bold rounded flex items-center justify-center gap-2 ${mobileTab === 'graph' ? 'bg-stone-800 text-stone-200' : 'text-stone-500 hover:text-stone-300'}`}
+                >
+                    <FaProjectDiagram /> GRAPH
+                </button>
             </div>
-            <div className="flex-1 rounded-b-md overflow-hidden bg-stone-900 border-x border-b border-stone-800 min-h-0">
-                <FloorMap />
+
+            {/* Mobile Content Area */}
+            <div className="flex-1 min-h-0 relative flex flex-col">
+                {mobileTab === 'map' && (
+                    <div className="flex flex-col flex-1 min-h-0 bg-stone-900 border border-stone-800 rounded-md overflow-hidden">
+                        <FloorMap />
+                    </div>
+                )}
+                {mobileTab === 'logs' && (
+                     <div className="flex-1 min-h-0">
+                        <AgentActivityLog />
+                     </div>
+                )}
+                {mobileTab === 'graph' && (
+                    <div className="flex-1 min-h-0 bg-stone-950 border border-stone-800 rounded-md overflow-hidden">
+                         <HierarchicalAgentGraph />
+                    </div>
+                )}
             </div>
-          </div>
-
-          {/* Activity Log */}
-          <div className="h-[250px] flex flex-col min-h-0">
-            <AgentActivityLog />
-          </div>
-
-          {/* Reasoning Graph - Hidden on mobile, shown on tablet */}
-          <div className="hidden md:block h-[200px] shrink-0 overflow-hidden bg-stone-950 border border-stone-800 rounded-md">
-              <HierarchicalAgentGraph />
-          </div>
         </div>
 
         {/* DESKTOP: Original layout - Top row (floor + activity), bottom row (graph) */}

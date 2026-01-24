@@ -53,17 +53,8 @@ const res = await fetch(`${API_BASE}/simulation/usage`);
     >
       <span className="timer-icon">⏱️</span>
       <span className="timer-text">
-        {minutes}:{seconds.toString().padStart(2, '0')} remaining
+        {minutes}:{seconds.toString().padStart(2, '0')}
       </span>
-      <div className="timer-bar">
-        <div 
-          className="timer-fill" 
-          style={{ 
-            width: `${percentage}%`,
-            backgroundColor: percentage > 50 ? '#22c55e' : percentage > 20 ? '#f59e0b' : '#ef4444'
-          }}
-        />
-      </div>
     </div>
   );
 }
