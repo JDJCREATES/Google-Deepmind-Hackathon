@@ -565,7 +565,12 @@ export const useStore = create<State>()(
                         cameraStates: {
                             ...state.cameraStates,
                             [newCamera.id]: newCamera
-                        }
+                        },
+                        // CRITICAL: Update static layout so FloorMap renders the new camera
+                        layout: state.layout ? {
+                            ...state.layout,
+                            cameras: [...(state.layout.cameras || []), newCamera]
+                        } : state.layout
                     }));
                     console.log(`📹 Camera installed: ${newCamera.id} at (${newCamera.position.x}, ${newCamera.position.y})`);
                     return;

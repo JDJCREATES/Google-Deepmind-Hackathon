@@ -970,6 +970,56 @@ async def execute_action_node(state: HypothesisMarketState) -> Dict[str, Any]:
                  "outcome": "Production lines suspended active operations."
              }
 
+        # 8. Dispatch Maintenance (Real Integration)
+        elif "dispatch_maintenance" in action.lower():
+             from app.services.simulation import simulation
+             # Extract args from action string (optimistic parsing)
+             # Format: dispatch_maintenance_crew(machine_id='CYL-09-A2', issue='...')
+             import re
+             m_id = "unknown"
+             match = re.search(r"machine_id=['\"]([^'\"]+)['\"]", action)
+             if match:
+                 m_id = match.group(1)
+             
+             # Extract issue
+             issue = "check"
+             match_issue = re.search(r"issue=['\"]([^'\"]+)['\"]", action)
+             if match_issue:
+                 issue = match_issue.group(1)
+             
+             res = simulation.dispatch_maintenance_crew(m_id, issue=issue)
+             
+             result = {
+                 "success": res["success"],
+                 "action": action,
+                 "executed_at": datetime.now().isoformat(),
+                 "outcome": f"Maintenance Crew Dispatched to {m_id}: {res.get('error') or 'En route'}"
+             }
+
+        # 9. Safety Clearance (Real Integration)
+        elif "initiate_safety" in action.lower():
+             from app.services.simulation import simulation
+             # Extract line_id
+             l_id = "L1"
+             match = re.search(r"line_id=['\"]([^'\"]+)['\"]", action)
+             if match:
+                 l_id = match.group(1)
+                 
+             # Extract personnel
+             personnel = "Unknown"
+             match_p = re.search(r"personnel=['\"]([^'\"]+)['\"]", action)
+             if match_p:
+                 personnel = match_p.group(1)
+                 
+             res = await simulation.initiate_safety_clearance(l_id, personnel)
+             
+             result = {
+                 "success": res["success"],
+                 "action": action,
+                 "executed_at": datetime.now().isoformat(),
+                 "outcome": f"Safety Protocol Initiated on {l_id}: {res.get('status') or res.get('error')}"
+             }
+
         # Fallback for unhandled actions
         if not result.get("success") and result["outcome"] == "Action not recognized by execution node":
              logger.warning(f"⚠️ Action '{action}' not bound in execute_nodes.py - Simulating success")

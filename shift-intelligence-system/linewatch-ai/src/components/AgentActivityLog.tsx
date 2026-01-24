@@ -146,13 +146,13 @@ const AgentActivityLog: React.FC = () => {
                                     </div>
                                     
                                     {/* Message */}
-                                    <p className="text-sm text-stone-300 leading-relaxed whitespace-pre-wrap">
+                                    <p className="text-sm text-stone-300 leading-relaxed whitespace-pre-wrap break-words">
                                         {entry.description}
                                     </p>
                                     
                                     {/* Tool Result Details */}
                                     {entry.type === 'tool_execution' && entry.data && entry.data.result && (
-                                        <div className="mt-2 text-xs font-mono bg-stone-950/80 p-2 rounded border border-stone-800 overflow-x-auto text-stone-400">
+                                        <div className="mt-2 text-xs font-mono bg-stone-950/80 p-2 rounded border border-stone-800 overflow-x-auto text-stone-400 max-w-full">
                                             {JSON.stringify(entry.data.result, null, 2)}
                                         </div>
                                     )}

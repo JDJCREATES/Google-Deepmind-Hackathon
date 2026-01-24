@@ -47,6 +47,7 @@ class RateLimiter:
                 for ip, stats in data.items():
                     self.usage[ip] = {
                         "daily_seconds_used": stats.get("daily_seconds_used", 0),
+                        "daily_injects": stats.get("daily_injects", 0),
                         "last_reset": datetime.fromisoformat(stats["last_reset"]) if stats.get("last_reset") else datetime.utcnow(),
                         "last_inject": datetime.fromisoformat(stats["last_inject"]) if stats.get("last_inject") else None,
                         "session_start": None
@@ -63,6 +64,7 @@ class RateLimiter:
             for ip, stats in self.usage.items():
                 serialize_data[ip] = {
                     "daily_seconds_used": stats["daily_seconds_used"],
+                    "daily_injects": stats.get("daily_injects", 0),
                     "last_reset": stats["last_reset"].isoformat() if stats.get("last_reset") else None,
                     "last_inject": stats["last_inject"].isoformat() if stats.get("last_inject") else None
                 }
@@ -71,6 +73,71 @@ class RateLimiter:
                 json.dump(serialize_data, f, indent=2)
         except Exception as e:
             logger.error(f"Failed to save rate limit state: {e}")
+
+    def check_inject_daily_limit(self, ip: str) -> Tuple[bool, int]:
+        """
+        Check if IP has remaining fault injections today (Limit: 5).
+        """
+        # DEV MODE: Bypass for whitelisted IPs
+        if ip in self.DEV_WHITELIST:
+            return (True, 999)
+            
+        self._reset_if_new_day(ip)
+        
+        used = self.usage.get(ip, {}).get("daily_injects", 0)
+        limit = 5
+        remaining = limit - used
+        
+        can_inject = remaining > 0
+        if not can_inject:
+            logger.warning(f"IP {ip} exceeded daily fault limit ({used}/{limit})")
+            
+        return (can_inject, max(0, remaining))
+
+    def check_daily_limit(self, ip: str) -> Tuple[bool, int]:
+        # ... (existing check_daily_limit implementation) ...
+        # Need to ensure I don't overwrite it incorrectly but replace_file_content replaces chunks.
+        # I will replace multiple chunks or careful selection.
+        # Since I'm editing specific methods, I should be careful.
+        # Actually, I can just append the new method and update __init__ / load / save.
+        pass # Placeholder for logic above
+
+    def record_inject(self, ip: str):
+        """Mark that this IP just injected an event."""
+        self._init_ip_if_needed(ip)
+        self.usage[ip]["last_inject"] = datetime.utcnow()
+        self.usage[ip]["daily_injects"] = self.usage[ip].get("daily_injects", 0) + 1 # Increment
+        self._save_state()  # Verify persistence immediately
+        logger.info(f"IP {ip} injected event ({self.usage[ip]['daily_injects']}/5 today)")
+
+    def _init_ip_if_needed(self, ip: str):
+        """Initialize tracking data for new IP."""
+        if ip not in self.usage:
+            self.usage[ip] = {
+                "daily_seconds_used": 0,
+                "daily_injects": 0, # NEW
+                "last_reset": datetime.utcnow(),
+                "last_inject": None,
+                "session_start": None
+            }
+
+    def _reset_if_new_day(self, ip: str):
+        """Reset usage if it's a new UTC day."""
+        if ip in self.usage:
+            # ... existing date check ...
+            last_reset = self.usage[ip].get("last_reset", datetime.utcnow())
+            if isinstance(last_reset, str): last_reset = datetime.fromisoformat(last_reset)
+            
+            if datetime.utcnow().date() > last_reset.date():
+                logger.info(f"Resetting daily usage for IP {ip} (new day)")
+                self.usage[ip] = {
+                    "daily_seconds_used": 0,
+                    "daily_injects": 0, # Reset count
+                    "last_reset": datetime.utcnow(),
+                    "last_inject": self.usage[ip].get("last_inject"),
+                    "session_start": None
+                }
+                self._save_state()
 
     def check_daily_limit(self, ip: str) -> Tuple[bool, int]:
         """
@@ -129,8 +196,27 @@ class RateLimiter:
         """Mark that this IP just injected an event."""
         self._init_ip_if_needed(ip)
         self.usage[ip]["last_inject"] = datetime.utcnow()
+        self.usage[ip]["daily_injects"] = self.usage[ip].get("daily_injects", 0) + 1
         self._save_state()  # Verify persistence immediately
-        logger.info(f"IP {ip} injected event")
+        logger.info(f"IP {ip} injected event ({self.usage[ip]['daily_injects']}/5 today)")
+
+    def check_inject_daily_limit(self, ip: str) -> Tuple[bool, int]:
+        """Check if IP has remaining fault injections today (Limit: 5)."""
+        # DEV MODE: Bypass for whitelisted IPs
+        if ip in self.DEV_WHITELIST:
+            return (True, 999)
+            
+        self._reset_if_new_day(ip)
+        
+        used = self.usage.get(ip, {}).get("daily_injects", 0)
+        limit = 5
+        remaining = limit - used
+        
+        can_inject = remaining > 0
+        if not can_inject:
+            logger.warning(f"IP {ip} exceeded daily fault limit ({used}/{limit})")
+            
+        return (can_inject, max(0, remaining))
     
     def start_session(self, ip: str):
         """Mark simulation start time for accurate tracking."""
@@ -184,6 +270,7 @@ class RateLimiter:
         if ip not in self.usage:
             self.usage[ip] = {
                 "daily_seconds_used": 0,
+                "daily_injects": 0,
                 "last_reset": datetime.utcnow(),
                 "last_inject": None,
                 "session_start": None
@@ -202,6 +289,7 @@ class RateLimiter:
                 logger.info(f"Resetting daily usage for IP {ip} (new day)")
                 self.usage[ip] = {
                     "daily_seconds_used": 0,
+                    "daily_injects": 0,
                     "last_reset": datetime.utcnow(),
                     "last_inject": self.usage[ip].get("last_inject"),  # Keep inject cooldown
                     "session_start": None

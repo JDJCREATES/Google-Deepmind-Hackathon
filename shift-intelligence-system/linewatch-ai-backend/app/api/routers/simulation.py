@@ -62,9 +62,14 @@ async def inject_event(event: ManualEvent, request: Request):
     ip = request.client.host
     
     # Check inject cooldown
-    can_inject, cooldown = rate_limiter.check_inject_cooldown(ip)
-    if not can_inject:
+    can_inject_cooldown, cooldown = rate_limiter.check_inject_cooldown(ip)
+    if not can_inject_cooldown:
         raise HTTPException(status_code=429, detail=f"Wait {cooldown}s before injecting again.")
+        
+    # Check daily limit (5 per day)
+    can_inject_daily, remaining_daily = rate_limiter.check_inject_daily_limit(ip)
+    if not can_inject_daily:
+        raise HTTPException(status_code=429, detail="Daily fault injection limit reached (5/day).")
     
     if not simulation.is_running:
         raise HTTPException(status_code=400, detail="Simulation must be running")

@@ -182,7 +182,12 @@ async def submit_resource_request(
         # Determine installation locations (simplified for now - could be smarter)
         cameras_installed = []
         
-        for i in range(quantity):
+        # Cap immediate installation to prevent spam (Simulate installation time)
+        max_install = 2
+        install_qty = min(quantity, max_install)
+        remaining_qty = quantity - install_qty
+        
+        for i in range(install_qty):
             # Install cameras in uncovered production zones
             # For testing, place them evenly across production zone
             y_position = 150 + (i * 150)  # Spread vertically
@@ -194,17 +199,22 @@ async def submit_resource_request(
             )
             cameras_installed.append(install_result)
         
+        note = "Cameras are now active."
+        if remaining_qty > 0:
+            note += f" {remaining_qty} units pending installation (technician capacity limited)."
+        
         return {
             "request_id": request_id,
-            "status": "approved_and_installed",
+            "status": "partial_installation" if remaining_qty > 0 else "approved_and_installed",
             "resource_type": resource_type,
-            "quantity": quantity,
+            "quantity_installed": install_qty,
+            "quantity_pending": remaining_qty,
             "total_cost": total_cost,
             "delivery_hours": delivery_hours,
             "justification_recorded": justification,
             "urgency": urgency,
             "cameras_installed": cameras_installed,
-            "note": "Cameras are now active and providing coverage"
+            "note": note
         }
     
     # Non-camera resources (parts, etc)
@@ -274,33 +284,32 @@ async def dispatch_personnel(
     # Log dispatch
     print(f"🔧 Personnel Dispatch: {role} to {location} | Task: {task_description} | ETA: {response_minutes}min")
     
-    # Spawn maintenance tech on map
+    # Spawn maintenance tech on map (Real Backend State Update)
     if role in ["maintenance_tech", "specialist_tech"]:
         from app.services.simulation import simulation
-        from app.services.websocket import manager
         
-        # Determine target coordinates based on location string
-        target_x, target_y = _parse_location(location, simulation)
+        # Use the simulation's centralized dispatch logic
+        # This ensures the backend state is updated so the crew doesn't disappear on next tick
+        sim_result = simulation.dispatch_maintenance_crew(location, issue=task_description)
         
-        # Create maintenance tech entity
-        tech_entity = {
-            "id": personnel_id,
-            "name": personnel_id,
-            "role": role,
-            "position": {"x": 50, "y": 50},  # Start at break room
-            "target": {"x": target_x, "y": target_y},
-            "status": "en_route",
-            "task": task_description,
+        if not sim_result.get("success"):
+             print(f"⚠️ Simulation Dispatch Failed: {sim_result.get('error')}")
+             # Fallback? No, just log it.
+        
+        return {
             "dispatch_id": dispatch_id,
+            "personnel_id": personnel_id,
+            "role": role,
+            "status": "dispatched",
+            "location": location,
+            "task": task_description,
             "eta_minutes": response_minutes,
-            "spawned_at": simulation.simulation_hours
+            "eta_timestamp": eta.isoformat(),
+            "estimated_duration_hours": estimated_duration_hours,
+            "estimated_cost": hourly_cost * estimated_duration_hours,
+            "priority": priority,
+            "tech_visible_on_map": True
         }
-        
-        # Broadcast tech spawn to frontend
-        await manager.broadcast({
-            "type": "maintenance_tech_dispatched",
-            "data": tech_entity
-        })
         
         # Schedule tech to "arrive" and fix the issue
         # For now, we'll simulate instant fix after ETA

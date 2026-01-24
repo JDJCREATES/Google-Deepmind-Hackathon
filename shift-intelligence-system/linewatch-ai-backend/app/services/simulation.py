@@ -863,7 +863,7 @@ class SimulationService:
         
         # 12. BROADCAST WAREHOUSE INVENTORY (periodic)
         events.append({
-            "type": "warehouse_inventory",
+            "type": "inventory_update",
             "data": self.warehouse_inventory.copy()
         })
         
@@ -1215,6 +1215,79 @@ class SimulationService:
             The product catalog
         """
         return PRODUCT_CATALOG.copy()
+
+    def dispatch_maintenance_crew(self, machine_id: str, issue: str = "check") -> Dict[str, Any]:
+        """
+        AI Agent API: Dispatch maintenance crew to a specific machine.
+        """
+        # Find machine
+        target_machine = None
+        # Parse machine ID (e.g. CYL-09-A2 -> Line 9)
+        # Or look up in machine map?
+        # Fallback: Search lines
+        line_match = None
+        try:
+            if "CYL" in machine_id or "Line" in machine_id:
+                # Extract number
+                import re
+                nums = re.findall(r'\d+', machine_id)
+                if nums:
+                    line_id = int(nums[0])
+                    target_machine = next((l for l in self.layout["lines"] if l["id"] == line_id), None)
+        except:
+            pass
+            
+        if not target_machine:
+            return {"success": False, "error": f"Machine {machine_id} not found on floor map"}
+            
+        # Dispatch logic
+        machine_x = target_machine["x"] + 20
+        machine_y = target_machine["y"] + 40
+        
+        # Calculate path
+        start_x, start_y = self.maintenance_crew["x"], self.maintenance_crew["y"]
+        path = self.pathfinding.find_path(start_x, start_y, machine_x, machine_y)
+        
+        if path:
+            self.maintenance_crew["path"] = path
+            self.maintenance_crew["path_index"] = 0
+            self.maintenance_crew["status"] = "moving_to_machine"
+            self.maintenance_crew["assigned_machine_id"] = machine_id
+            self.maintenance_crew["current_action"] = f"responding_to_{issue}"[:30] # Limit length
+            
+            logger.info(f"🛠️ Dispatching Maintenance Crew to {machine_id} (Issue: {issue})")
+            return {"success": True, "eta_seconds": len(path) * 0.5} # Approx
+        else:
+            return {"success": False, "error": "Pathfinding failed"}
+
+    async def initiate_safety_clearance(self, line_id_str: str, personnel: str) -> Dict[str, Any]:
+        """
+        AI Agent API: Execute safety clearance protocol (E-Stop + Log).
+        """
+        # Parse line ID (L19 -> 19)
+        try:
+            import re
+            nums = re.findall(r'\d+', line_id_str)
+            if not nums:
+                return {"success": False, "error": "Invalid Line ID"}
+            line_id = int(nums[0])
+        except:
+            return {"success": False, "error": "ID Parse Error"}
+            
+        # 1. Suspend Line
+        await self._suspend_production_line(str(line_id), f"Safety Violation: {personnel}")
+        
+        # 2. Dispatch Supervisor if available
+        # Find machine pos
+        target_machine = next((l for l in self.layout["lines"] if l["id"] == line_id), None)
+        if target_machine:
+            self.dispatch_supervisor_to_location(target_machine["x"], target_machine["y"], f"Safety Audit {line_id}")
+            
+        return {
+            "success": True, 
+            "status": "Production Suspended", 
+            "protocol": "OSHA-1910-CONTROL-HAZARDOUS-ENERGY"
+        }
     
     # =========================================================================
     # OPERATORS (existing logic, cleaned up)
