@@ -1,5 +1,5 @@
-# FINAL ROOT DOCKERFILE
-# This sits at the very top of the repo so Cloud Run can find it.
+# FINAL ROOT DOCKERFILE - CACHE BUST 2
+# This allows Cloud Run to build from root without "Context Directory" settings.
 
 FROM python:3.11-slim
 
