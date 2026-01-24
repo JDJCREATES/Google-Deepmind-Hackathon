@@ -6,6 +6,9 @@ on:
     paths:
       - 'shift-intelligence-system/linewatch-ai/**'
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
