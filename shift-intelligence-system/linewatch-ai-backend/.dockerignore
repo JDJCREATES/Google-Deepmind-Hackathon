@@ -1,0 +1,16 @@
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+.env
+.env.example
+.git
+.gitignore
+.gcloudignore
+.DS_Store
+rate_limit_state.json
+data/

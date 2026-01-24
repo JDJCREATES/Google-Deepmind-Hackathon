@@ -33,9 +33,11 @@ class Settings(BaseSettings):
     
     # Simulation Settings
     simulation_speed: float = 1.0
-    event_probability_bottleneck: float = 0.05
-    event_probability_breakdown: float = 0.02
-    event_probability_safety_violation: float = 0.03
+    # REDUCED PROBABILITIES (Per User Request for "slower" simulation)
+    # 0.005 per 0.5s tick = ~1 event every 100 seconds
+    event_probability_bottleneck: float = 0.01   # Was 0.05
+    event_probability_breakdown: float = 0.005   # Was 0.02
+    event_probability_safety_violation: float = 0.008 # Was 0.03
     
     # Agent Persistence
     agent_checkpoint_db: str | None = None  # Defaults to data/agent_checkpoints.db
@@ -44,16 +46,10 @@ class Settings(BaseSettings):
     def cors_origins(self) -> List[str]:
         """Allowed CORS origins for frontend."""
         return [
+            "*", # Allow ALL origins for simplified hackathon/live demo hosting
             self.frontend_url, 
             "http://localhost:3000",
             "http://localhost:5173",
-            "http://localhost:5174",
-            "http://localhost:5175",
-            "http://localhost:5176",
-            "http://localhost:5177",
-            "http://localhost:5178",
-            "http://localhost:5179",
-            "http://localhost:5180",
         ]
 
 
