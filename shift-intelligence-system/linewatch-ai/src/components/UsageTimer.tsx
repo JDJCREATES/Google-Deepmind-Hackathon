@@ -24,7 +24,7 @@ export function UsageTimer() {
     const startPolling = setTimeout(() => {
       const fetchUsage = async () => {
         try {
-          const res = await fetch('http://localhost:8000/api/simulation/usage');
+const res = await fetch(`${API_BASE}/simulation/usage`);
           const data = await res.json();
           setStats(data);
         } catch (error) {
