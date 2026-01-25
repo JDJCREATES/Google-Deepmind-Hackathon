@@ -5,7 +5,6 @@ interface ThoughtBubbleData {
     agentColor: string;
     isDragged: boolean;
     onClose: () => void;
-    onDragStart: () => void;
 }
 
 const ThoughtBubbleNode: React.FC<{ data: ThoughtBubbleData }> = ({ data }) => {
@@ -15,7 +14,6 @@ const ThoughtBubbleNode: React.FC<{ data: ThoughtBubbleData }> = ({ data }) => {
             style={{
                 animation: data.isDragged ? 'none' : 'thoughtDrift 12s ease-out forwards',
             }}
-            onMouseDown={data.onDragStart}
         >
             <div 
                 className="p-3 rounded-lg shadow-lg max-w-xs relative bg-opacity-90 backdrop-blur-sm"
@@ -27,16 +25,19 @@ const ThoughtBubbleNode: React.FC<{ data: ThoughtBubbleData }> = ({ data }) => {
                 }}
             >
                 {/* Close button */}
-                <button
-                    onClick={(e) => {
-                        e.stopPropagation();
-                        data.onClose();
-                    }}
-                    className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-stone-700 hover:bg-stone-600 text-stone-300 hover:text-white flex items-center justify-center text-xs font-bold transition-colors shadow-md border border-stone-600"
-                    style={{ cursor: 'pointer' }}
-                >
-                    ×
-                </button>
+                {/* Close button - Only visible when grabbed/dragged */}
+                {data.isDragged && (
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            data.onClose();
+                        }}
+                        className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-stone-700 hover:bg-stone-600 text-stone-300 hover:text-white flex items-center justify-center text-xs font-bold transition-colors shadow-md border border-stone-600"
+                        style={{ cursor: 'pointer' }}
+                    >
+                        ×
+                    </button>
+                )}
                 <p className="text-xs text-stone-200 leading-tight font-medium font-sans">
                     {data.text}
                 </p>

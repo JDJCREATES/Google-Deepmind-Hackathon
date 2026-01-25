@@ -167,70 +167,72 @@ const HierarchicalAgentGraph: React.FC = () => {
             maintenance: 'Maintenance',
         };
 
-        const agentNodes = Object.keys(labelMap).map((key) => {
-            const isActive = activeAgents.has(key);
-            return {
-                id: key,
-                type: 'richAgent',
-                position: POSITIONS[key as keyof typeof POSITIONS],
-                data: {
-                    agentId: key,
-                    label: labelMap[key as keyof typeof labelMap],
-                    type: key,
-                    status: isActive ? 'Active' : (key === 'orchestrator' ? 'Coordination' : 'Ready'),
-                    isActive: isActive,
-                    inputTokens: agentTokens[key]?.input || 0,
-                    outputTokens: agentTokens[key]?.output || 0,
-                    lastAction: agentActions[key]?.action, // Pass the last action
-                },
-            };
+        // Combine all nodes using functional update to access previous state without dependency cycle
+        setNodes((prevNodes) => {
+             // 1. Re-generate Agent Nodes (to capture latest tokens/status)
+            const agentNodes = Object.keys(labelMap).map((key) => {
+                const isActive = activeAgents.has(key);
+                // Preserve position if agent was dragged (optional, but good for stability)
+                const existing = prevNodes.find(n => n.id === key);
+                
+                return {
+                    id: key,
+                    type: 'richAgent',
+                    position: existing ? existing.position : POSITIONS[key as keyof typeof POSITIONS],
+                    data: {
+                        agentId: key,
+                        label: labelMap[key as keyof typeof labelMap],
+                        type: key,
+                        status: isActive ? 'Active' : (key === 'orchestrator' ? 'Coordination' : 'Ready'),
+                        isActive: isActive,
+                        inputTokens: agentTokens[key]?.input || 0,
+                        outputTokens: agentTokens[key]?.output || 0,
+                        lastAction: agentActions[key]?.action,
+                    },
+                };
+            });
+
+            // 2. Re-generate Thought Bubble Nodes
+            const thoughtBubbleNodes = thoughtBubbles.map((bubble, index) => {
+                // Check if node already exists in PREVIOUS state to preserve position
+                const existingNode = prevNodes.find(n => n.id === bubble.id);
+                
+                const position = POSITIONS[bubble.agentId as keyof typeof POSITIONS];
+                if (!position) return null;
+
+                const agentBubblesBefore = thoughtBubbles
+                    .slice(0, index)
+                    .filter(b => b.agentId === bubble.agentId).length;
+                
+                // Use existing position if available
+                const nodePosition = existingNode ? existingNode.position : { 
+                    x: position.x + 100 + (bubble.offsetX || 0), 
+                    y: position.y + 60 + (agentBubblesBefore * 60) 
+                };
+
+                return {
+                    id: bubble.id,
+                    type: 'thoughtBubble',
+                    position: nodePosition,
+                    data: {
+                        text: bubble.text,
+                        agentColor: agentColors[bubble.agentId] || '#6B7280',
+                        isDragged: bubble.isDragged || false,
+                        onClose: () => {
+                            setThoughtBubbles(prev => prev.filter(b => b.id !== bubble.id));
+                            if (bubble.timeoutId) {
+                                clearTimeout(bubble.timeoutId);
+                            }
+                        },
+                    },
+                    draggable: true,
+                    selectable: true,
+                };
+            }).filter(Boolean) as any[];
+
+            return [...agentNodes, ...thoughtBubbleNodes];
         });
-
-        // Add thought bubble nodes with vertical stacking
-        const thoughtBubbleNodes = thoughtBubbles.map((bubble, index) => {
-            const position = POSITIONS[bubble.agentId as keyof typeof POSITIONS];
-            if (!position) return null;
-
-            // Count how many bubbles for this agent came before this one
-            const agentBubblesBefore = thoughtBubbles
-                .slice(0, index)
-                .filter(b => b.agentId === bubble.agentId).length;
-
-            return {
-                id: bubble.id,
-                type: 'thoughtBubble',
-                position: { 
-                    x: position.x + 100 + (bubble.offsetX || 0), // Spawn to the right of agent node
-                    y: position.y + 60 + (agentBubblesBefore * 60) // Spawn below agent node, stack downward
-                },
-                data: {
-                    text: bubble.text,
-                    agentColor: agentColors[bubble.agentId] || '#6B7280',
-                    isDragged: bubble.isDragged || false,
-                    onClose: () => {
-                        setThoughtBubbles(prev => prev.filter(b => b.id !== bubble.id));
-                        if (bubble.timeoutId) {
-                            clearTimeout(bubble.timeoutId);
-                        }
-                    },
-                    onDragStart: () => {
-                        // Mark as dragged to prevent auto-removal
-                        setThoughtBubbles(prev => prev.map(b => 
-                            b.id === bubble.id ? { ...b, isDragged: true } : b
-                        ));
-                        if (bubble.timeoutId) {
-                            clearTimeout(bubble.timeoutId);
-                        }
-                    },
-                },
-                draggable: true,
-                selectable: true,
-            };
-        }).filter(Boolean) as any[];
-
-        // Combine all nodes
-        setNodes([...agentNodes, ...thoughtBubbleNodes]);
-    }, [activeAgents, agentTokens, thoughtBubbles, agentActions]);
+    }, [activeAgents, agentTokens, thoughtBubbles, agentActions]); // Removed 'nodes' dependency
 
     // Initialize edges (Hub & Spoke from Orchestrator)
     useEffect(() => {
@@ -279,6 +281,19 @@ const HierarchicalAgentGraph: React.FC = () => {
                 maxZoom={1.5}
                 defaultViewport={{ x: 0, y: 0, zoom: 0.85 }}
                 connectionLineType={ConnectionLineType.SmoothStep}
+                onNodeDragStart={(_, node) => {
+                    if (node.type === 'thoughtBubble') {
+                        // Mark bubble as dragged when user grabs it
+                        setThoughtBubbles(prev => prev.map(b => {
+                            if (b.id === node.id) {
+                                // Clear timeout if it exists
+                                if (b.timeoutId) clearTimeout(b.timeoutId);
+                                return { ...b, isDragged: true };
+                            }
+                            return b;
+                        }));
+                    }
+                }}
             >
                 <Background color="#1F2937" gap={24} size={1} />
             </ReactFlow>
