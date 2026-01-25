@@ -2123,7 +2123,7 @@ class SimulationService:
         }
         
         # Trigger investigation automatically (Fix for missing monitoring loop)
-        self._create_task(self._trigger_investigation(signal["data"]))
+        self._create_task(self._trigger_investigation(signal["data"], signal["type"]))
         
         return signal
     
@@ -2162,11 +2162,11 @@ class SimulationService:
         
         
         # The external monitoring loop was missing, so we invoke the agent here.
-        self._create_task(self._trigger_investigation(signal["data"]))
+        self._create_task(self._trigger_investigation(signal["data"], signal["type"]))
         
         return signal
     
-    async def _trigger_investigation(self, event_data: dict):
+    async def _trigger_investigation(self, event_data: dict, signal_type: str = "UNKNOWN"):
         """Run hypothesis market for a critical event (only if simulation is running)."""
         # CRITICAL FIX: Check if simulation is still running before starting investigation
         if not self.is_running:
@@ -2194,7 +2194,7 @@ class SimulationService:
             # FIX: Call directly instead of creating nested async task
             await run_hypothesis_market(
                 signal_id=f"sim-{int(datetime.now().timestamp())}",
-                signal_type=event_data.get("type", "UNKNOWN"),
+                signal_type=signal_type,
                 signal_description=event_data.get("description", "Simulation Event"),
                 signal_data=event_data
             )
@@ -2403,7 +2403,7 @@ class SimulationService:
                 logger.info(f"🤖 Triggering Agent Investigation for manual {event_type}")
             if event["data"].get("severity") in ["HIGH", "CRITICAL"]:
                 logger.info(f"🤖 Triggering Agent Investigation for manual {event_type}")
-                self._create_task(self._trigger_investigation(event["data"]))
+                self._create_task(self._trigger_investigation(event["data"], event_type))
             
             return event
             

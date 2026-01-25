@@ -145,31 +145,34 @@ class BaseAgent(ABC):
         # Explicit Context Caching (Gemini 3)
         cache_name = None
         try:
-            import google.generativeai as genai
-            from google.generativeai import caching
+            from google import genai
+            from google.genai import types
+            
+            # Initialize Client
+            client = genai.Client(api_key=settings.google_api_key)
             
             # Simple cache key based on agent name
-            # In production, hash the content to detect changes
             display_name = f"{self.agent_name}_v1"
             
-            # Check for existing cache (naïve approach for demo)
-            # For a persistent running service, we'd check existence more robustly
-            # or just create with a unique name per version.
-            
-            # Create cached content
+            # Create cached content using new SDK
             # We cache the system prompt to reduce startup tokens/latency
-            cached_sys_prompt = caching.CachedContent.create(
+            
+            # Note: The new SDK uses a different structure for caching
+            # We need to adapt the system instruction format
+            
+            cached_sys_prompt = client.caches.create(
                 model=self.llm.model,
-                display_name=display_name,
-                system_instruction=self._system_prompt,
-                contents=[], # No history yet
-                ttl=datetime.timedelta(minutes=60), # Keep alive for 60 mins
+                config=types.CreateCachedContentConfig(
+                    display_name=display_name,
+                    system_instruction=self._system_prompt,
+                    ttl="3600s", # 60 minutes
+                )
             )
             cache_name = cached_sys_prompt.name
             self.logger.debug(f"💾 {self.agent_name} Context Cached: {cache_name}")
             
         except ImportError:
-            self.logger.warning("google-generativeai not installed, skipping explicit caching")
+            self.logger.warning("google-genai not installed, skipping explicit caching")
         except Exception as e:
             self.logger.debug(f"Caching skipped/failed (normal for first run or unsupported region): {e}")
 
