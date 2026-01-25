@@ -968,9 +968,8 @@ class SimulationService:
                 for event in events:
                     event_data = event.get("data", {})
                     if event_data.get("severity") in ["HIGH", "CRITICAL"]:
-                        task = asyncio.create_task(self._trigger_investigation(event_data))
-                        self.pending_tasks.add(task)
-                        task.add_done_callback(lambda t: self.pending_tasks.discard(t))
+                        # Use centralized tracking and Pass signal TYPE
+                        self._create_task(self._trigger_investigation(event_data, event.get("type", "UNKNOWN")))
     
     # =========================================================================
     # PRODUCTION LOGIC
@@ -2122,9 +2121,6 @@ class SimulationService:
             }
         }
         
-        # Trigger investigation automatically (Fix for missing monitoring loop)
-        self._create_task(self._trigger_investigation(signal["data"], signal["type"]))
-        
         return signal
     
     async def _trigger_safety_violation(self) -> Dict[str, Any]:
@@ -2160,9 +2156,6 @@ class SimulationService:
             }
         }
         
-        
-        # The external monitoring loop was missing, so we invoke the agent here.
-        self._create_task(self._trigger_investigation(signal["data"], signal["type"]))
         
         return signal
     
