@@ -61,12 +61,8 @@ const AgentActivityLog: React.FC = () => {
                 {AGENT_TABS.map(tab => {
                     const isActive = activeTab === tab.id;
                     const count = tab.id === 'all' ? agentLogs.length : 
-                        logs.filter(l => {
+                        agentLogs.filter(l => {
                             const s = (l.source || '').toLowerCase();
-                            // Also fix count logic to include all types
-                            const isType = l.type === 'agent_activity' || l.type === 'agent_thinking' || l.type === 'agent_action' || l.type === 'tool_execution';
-                            if (!isType) return false;
-                            
                             if (tab.id === 'orchestrator') return s.includes('orchestrator') || s.includes('master');
                             return s.includes(tab.id);
                         }).length;
@@ -153,7 +149,10 @@ const AgentActivityLog: React.FC = () => {
                                     {/* Tool Result Details */}
                                     {entry.type === 'tool_execution' && entry.data && entry.data.result && (
                                         <div className="mt-2 text-xs font-mono bg-stone-950/80 p-2 rounded border border-stone-800 overflow-x-auto text-stone-400 max-w-full">
-                                            {JSON.stringify(entry.data.result, null, 2)}
+                                            {typeof entry.data.result === 'string' 
+                                                ? entry.data.result 
+                                                : JSON.stringify(entry.data.result, null, 2)
+                                            }
                                         </div>
                                     )}
                                 </div>

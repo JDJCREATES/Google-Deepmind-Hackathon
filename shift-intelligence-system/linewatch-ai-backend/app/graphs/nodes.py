@@ -648,6 +648,9 @@ async def gather_evidence_node(state: HypothesisMarketState) -> Dict[str, Any]:
                 formatted_result = f"Health: {sim_result['health_percent']}% - {sim_result.get('status')}"
             elif "visual_anomaly_detected" in sim_result:
                 formatted_result = f"Anomaly: {sim_result['visual_anomaly_detected']} ({sim_result.get('description')})"
+            elif "oee_percent" in sim_result:
+                # Format check_schedule / metrics results
+                formatted_result = f"Metrics: OEE {sim_result.get('oee_percent')}% - Safety {sim_result.get('safety_score')}"
         
         await manager.broadcast({
             "type": "tool_execution",

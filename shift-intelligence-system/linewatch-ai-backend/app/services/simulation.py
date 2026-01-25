@@ -720,6 +720,9 @@ class SimulationService:
     
     async def _run_loop(self):
         """Main simulation loop."""
+        # Initialize event throttle
+        self.last_event_time = datetime.now()
+        
         while self.is_running:
             try:
                 start_time = datetime.now()
@@ -800,12 +803,21 @@ class SimulationService:
         detections = self._check_cameras()
         events.extend(detections)
         
-        if random.random() < (settings.event_probability_breakdown / 4):
-            events.append(self._generate_breakdown())
+        # THROTTLING: 15-30s cooldown between automatic events
+        time_since_last_event = (datetime.now() - self.last_event_time).total_seconds()
+        cooldown_period = random.randint(15, 30) # Random cooldown as requested
         
-        if random.random() < (settings.event_probability_safety_violation / 4):
-            violation_event = await self._trigger_safety_violation()
-            events.append(violation_event)
+        if time_since_last_event > cooldown_period:
+            if random.random() < (settings.event_probability_breakdown / 4):
+                evt = self._generate_breakdown()
+                events.append(evt)
+                self.last_event_time = datetime.now() # Reset cooldown
+            
+            # Only try safety violation if no breakdown occurred (one event at a time)
+            elif random.random() < (settings.event_probability_safety_violation / 4):
+                violation_event = await self._trigger_safety_violation()
+                events.append(violation_event)
+                self.last_event_time = datetime.now() # Reset cooldown
         
         # 9. CHECK FOR UNATTENDED LINES (Staffing Trigger)
         # Random check (1% chance per tick) to avoid spamming
