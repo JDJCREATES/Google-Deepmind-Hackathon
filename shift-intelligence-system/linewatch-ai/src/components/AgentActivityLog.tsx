@@ -142,7 +142,7 @@ const AgentActivityLog: React.FC = () => {
                                     </div>
                                     
                                     {/* Message */}
-                                    <p className="text-sm text-stone-300 leading-relaxed whitespace-pre-wrap break-words">
+                                    <p className="text-sm text-stone-300 leading-relaxed whitespace-pre-line break-words w-full">
                                         {entry.description}
                                     </p>
                                     
