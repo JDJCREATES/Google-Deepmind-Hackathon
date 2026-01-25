@@ -2218,6 +2218,42 @@ class SimulationService:
             import traceback
             logger.error(traceback.format_exc())
     
+    def dispatch_maintenance_crew(self, machine_id: int) -> bool:
+        """
+        Dispatch maintenance crew to a specific machine.
+        """
+        if self.maintenance_crew["status"] != "idle":
+            logger.warning("⚠️ Maintenance crew is busy, cannot dispatch")
+            return False
+            
+        target_machine = self.machine_production.get(machine_id)
+        if not target_machine:
+            logger.error(f"❌ Cannot dispatch to invalid machine ID {machine_id}")
+            return False
+            
+        # Set status
+        self.maintenance_crew["status"] = "moving"
+        self.maintenance_crew["current_action"] = f"moving_to_line_{machine_id}"
+        self.maintenance_crew["assigned_machine_id"] = machine_id
+        
+        # Calculate path
+        path = self.pathfinding.find_path(
+            self.maintenance_crew["x"], self.maintenance_crew["y"],
+            target_machine["x"], target_machine["y"]
+        )
+        
+        if path:
+            self.maintenance_crew["path"] = path
+            self.maintenance_crew["path_index"] = 0
+            logger.info(f"🚚 Maintenance crew dispatched to Line {machine_id}")
+            return True
+        else:
+            # Fallback for no path (teleport or just mark as arrived)
+            self.maintenance_crew["x"] = target_machine["x"]
+            self.maintenance_crew["y"] = target_machine["y"]
+            logger.warning(f"⚠️ No path found for maintenance crew to Line {machine_id} - Teleporting")
+            return True
+
     async def _finish_repair(self, machine_id: int):
         """Helper to simulate repair duration and return trip."""
         await asyncio.sleep(5) # Repair takes 5 seconds
