@@ -9,6 +9,9 @@ def setup_logging(level: str = "INFO"):
     # Remove default handler
     logger.remove()
     
+    # Bind default context to prevent KeyError
+    logger.configure(extra={"agent": "SYSTEM"})
+    
     # Add custom handler with colors and agent context
     logger.add(
         sys.stdout,
