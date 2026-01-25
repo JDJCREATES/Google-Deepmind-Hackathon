@@ -407,6 +407,19 @@ export const useStore = create<State>()(
                             
                             // Extract description from data.thought or stringify data
                             let description = backendLog.data?.thought || JSON.stringify(backendLog.data);
+
+                            if (backendLog.type === 'agent_action') {
+                                if (backendLog.data.actions && Array.isArray(backendLog.data.actions)) {
+                                     description = backendLog.data.actions.join(' | ');
+                                } else if (backendLog.data.action) {
+                                     description = backendLog.data.action;
+                                } else {
+                                     description = "Action Executed";
+                                }
+                            } else if (backendLog.type === 'tool_execution') {
+                                const { tool, rationale } = backendLog.data;
+                                description = `🔧 Executed ${tool}: ${rationale || ''}`;
+                            }
                             
                             // Return properly formatted LogEntry
                             return {
