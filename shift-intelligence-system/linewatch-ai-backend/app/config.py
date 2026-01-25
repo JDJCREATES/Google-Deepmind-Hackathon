@@ -1,4 +1,5 @@
 """Application configuration using Pydantic Settings."""
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List
 
@@ -41,6 +42,15 @@ class Settings(BaseSettings):
     
     # Agent Persistence
     agent_checkpoint_db: str | None = None  # Defaults to data/agent_checkpoints.db
+    
+    # Auto-detect Cloud Run environment (K_SERVICE is set by Cloud Run)
+    def _default_data_dir():
+        import os
+        if os.environ.get("K_SERVICE"):
+            return "/tmp"
+        return "data"
+        
+    data_dir: str = Field(default_factory=_default_data_dir)     # Directory for storing state
     
     @property
     def cors_origins(self) -> List[str]:

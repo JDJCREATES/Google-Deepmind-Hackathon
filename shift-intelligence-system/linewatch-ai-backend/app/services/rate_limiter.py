@@ -16,7 +16,10 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-STATE_FILE = Path("rate_limit_state.json")
+from app.config import settings
+import os
+os.makedirs(settings.data_dir, exist_ok=True)
+STATE_FILE = Path(settings.data_dir) / "rate_limit_state.json"
 
 class RateLimiter:
     """

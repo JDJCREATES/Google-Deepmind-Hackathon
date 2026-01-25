@@ -686,6 +686,20 @@ async def gather_evidence_node(state: HypothesisMarketState) -> Dict[str, Any]:
                 evidence_list.append(evidence)
         except Exception as e:
             logger.error(f"Evidence gathering failed for hypothesis {i}: {e}")
+            try:
+                # Broadcast error to frontend so user knows why agent is silent
+                from app.services.websocket import manager
+                agent_name = hypothesis.proposed_by.replace("Agent", "").lower() if hypothesis.proposed_by else "system"
+                await manager.broadcast({
+                    "type": "agent_action",  # Use action type so it shows in logs
+                    "data": {
+                        "agent": agent_name,
+                        "actions": [f"❌ Error during verification: {str(e)}"],
+                        "timestamp": datetime.now().isoformat()
+                    }
+                })
+            except Exception:
+                pass
             
     logger.info(f"✅ Gathered {len(evidence_list)} pieces of dynamic evidence")
     

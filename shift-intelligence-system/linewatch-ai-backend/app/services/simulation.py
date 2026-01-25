@@ -278,7 +278,12 @@ class SimulationService:
         # =====================================================================
         # STATE & PERSISTENCE
         # =====================================================================
-        self.state_file_path = "data/simulation_state.json"
+        from app.config import settings
+        import os
+        
+        # Ensure data directory exists
+        os.makedirs(settings.data_dir, exist_ok=True)
+        self.state_file_path = f"{settings.data_dir}/simulation_state.json"
         
         # Initialize Financials (Will be overwritten by load_state if exists)
         self.financials = FinancialState(

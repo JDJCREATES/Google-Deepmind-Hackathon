@@ -20,7 +20,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, System
 from langchain_core.tools import BaseTool
 from langgraph.graph import StateGraph, END
 from langgraph.prebuilt import create_react_agent
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+# from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from app.config import settings
 from app.utils.logging import get_agent_logger
@@ -100,7 +100,7 @@ class BaseAgent(ABC):
         # =================================================================
         # We use lazy initialization to properly manage the async lifecycle.
         # The connection is created on first async call and reused thereafter.
-        self._checkpoint_path = settings.agent_checkpoint_db or "data/agent_checkpoints.db"
+        self._checkpoint_path = settings.agent_checkpoint_db or f"{settings.data_dir}/agent_checkpoints.db"
         self._db_conn = None  # aiosqlite connection, created lazily
         self._checkpointer = None  # AsyncSqliteSaver instance
         self._agent = None  # Compiled agent, created after checkpointer init
@@ -135,9 +135,7 @@ class BaseAgent(ABC):
         if self._agent is not None:
             return  # Already initialized
         
-        import aiosqlite
         import os
-        from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
         
         # Ensure directory exists
         os.makedirs(os.path.dirname(self._checkpoint_path) or ".", exist_ok=True)
@@ -178,6 +176,9 @@ class BaseAgent(ABC):
 
         try:
             # Create persistent aiosqlite connection
+            import aiosqlite
+            from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
             self._db_conn = await aiosqlite.connect(self._checkpoint_path)
             
             # MONKEY PATCH: LangGraph's AsyncSqliteSaver expects 'is_alive' which aiosqlite lacks
