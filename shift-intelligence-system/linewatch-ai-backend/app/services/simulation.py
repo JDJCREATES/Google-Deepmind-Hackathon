@@ -2097,7 +2097,7 @@ class SimulationService:
         ]
         detail = random.choice(failure_modes)
         
-        return {
+        signal = {
             "type": "visual_signal",
             "data": {
                 "source": f"Camera_{line_id:02d}",
@@ -2107,6 +2107,11 @@ class SimulationService:
                 "timestamp": datetime.now().isoformat()
             }
         }
+        
+        # Trigger investigation automatically (Fix for missing monitoring loop)
+        asyncio.create_task(self._trigger_investigation(signal["data"]))
+        
+        return signal
     
     async def _trigger_safety_violation(self) -> Dict[str, Any]:
         """Make an operator walk into a dangerous zone and trigger investigation."""
@@ -2141,8 +2146,10 @@ class SimulationService:
             }
         }
         
-        # DON'T trigger investigation here - monitoring loop will handle it
-        # This was causing DOUBLE triggers (direct + monitoring loop)
+        
+        # MONITORING LOOP REPLACEMENT: Trigger investigation directly
+        # The external monitoring loop was missing, so we invoke the agent here.
+        asyncio.create_task(self._trigger_investigation(signal["data"]))
         
         return signal
     

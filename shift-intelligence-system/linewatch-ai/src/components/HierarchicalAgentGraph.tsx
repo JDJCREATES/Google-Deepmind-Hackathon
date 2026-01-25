@@ -57,7 +57,7 @@ const HierarchicalAgentGraph: React.FC = () => {
     // Ref to track timeouts per agent to prevent closures from trapping stale state
     const activeTimersRef = useRef<Record<string, number>>({});
     
-    const { agentStats } = useStore();
+    const { agentStats, socket } = useStore();
 
     // Subscribe to agentStats for activation state
     useEffect(() => {
@@ -113,7 +113,7 @@ const HierarchicalAgentGraph: React.FC = () => {
                     if (!rawAgent || !thought) return;
                     
                     const agent = rawAgent.toLowerCase();
-                    console.log('[HierarchicalAgentGraph] Received agent_thinking:', agent, thought?.substring(0, 50));
+                    // console.log('[HierarchicalAgentGraph] Received agent_thinking:', agent, thought?.substring(0, 50));
 
                     const bubbleId = `bubble-${Date.now()}-${Math.random()}`;
                     
@@ -146,18 +146,16 @@ const HierarchicalAgentGraph: React.FC = () => {
             }
         };
 
-        // Access the WebSocket from useStore
-        const ws = (window as any).__agentWebSocket;
-
-        if (ws) {
-            ws.addEventListener('message', handleMessage);
+        // Access the WebSocket from useStore (No global hacks)
+        if (socket) {
+            socket.addEventListener('message', handleMessage);
             return () => {
-                ws.removeEventListener('message', handleMessage);
+                socket.removeEventListener('message', handleMessage);
                 // Clean up ALL timeouts on unmount
                 Object.values(activeTimersRef.current).forEach(id => clearTimeout(id));
             };
         }
-    }, []);
+    }, [socket]);
 
     // Initialize nodes
     useEffect(() => {
