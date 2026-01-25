@@ -244,38 +244,17 @@ async def run_hypothesis_market(
         signal_data=signal_data,
     )
     
-    # Use AsyncSqliteSaver with manual connection
-    from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-    from app.config import settings
-    import aiosqlite
-    
-    checkpoint_path = settings.agent_checkpoint_db or "data/agent_checkpoints.db"
-    
-    # Ensure directory exists
-    import os
-    
-    # Connection object to close later
-    conn = None
+    # FORCE MEMORY SAVER FOR CLOUD RUN
+    # SQLite persistence is causing issues and is not needed for ephemeral demo.
+    logger.info("💾 using MemorySaver for agent persistence (Cloud Run optimized)")
+    checkpointer = MemorySaver()
+    persistence_mode = "memory"
     
     try:
         # VERIFY API KEY FIRST - Fail early if missing
         if not settings.google_api_key:
             raise ValueError("Missing GOOGLE_API_KEY. Cannot run agent graph.")
             
-        # Create persistent aiosqlite connection
-        # SAFEGUARD: Wrap makedirs in try block for Read-Only containers
-        try:
-             os.makedirs(os.path.dirname(checkpoint_path) or ".", exist_ok=True)
-             conn = await aiosqlite.connect(checkpoint_path)
-             # MONKEY PATCH: LangGraph's AsyncSqliteSaver expects 'is_alive'
-             conn.is_alive = lambda: True
-             checkpointer = AsyncSqliteSaver(conn)
-             persistence_mode = "sqlite"
-        except Exception as db_err:
-             logger.warning(f"⚠️ Failed to initialize SQLite checkpointing: {db_err}. Falling back to MemorySaver.")
-             checkpointer = MemorySaver()
-             persistence_mode = "memory"
-        
         # Compile graph using the checkpointer
         graph = compile_hypothesis_market(use_checkpointing=True, checkpointer=checkpointer)
         
