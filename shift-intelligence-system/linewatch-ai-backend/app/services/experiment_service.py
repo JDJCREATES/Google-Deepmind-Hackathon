@@ -24,7 +24,7 @@ class ExperimentService:
     Supports on-demand CSV export.
     """
     
-    def __init__(self, data_dir: str = "data"):
+    def __init__(self, data_dir: str = settings.data_dir):
         self.data_dir = data_dir
         
         # Safe initialization for Read-Only environments (Cloud Run)
@@ -309,4 +309,4 @@ class ExperimentService:
             
         return sessions
 
-experiment_service = ExperimentService()
+experiment_service = ExperimentService(data_dir=settings.data_dir)
