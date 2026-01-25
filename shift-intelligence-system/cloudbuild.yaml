@@ -14,7 +14,6 @@ steps:
     args:
       - 'run'
       - 'deploy'
-      - 'deploy'
       - 'google-deepmind-hackathon'  # Correct Service Name
       - '--image'
       - 'gcr.io/$PROJECT_ID/linewatch-backend'
