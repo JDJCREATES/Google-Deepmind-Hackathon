@@ -15,11 +15,12 @@ steps:
     args:
       - 'run'
       - 'deploy'
-      - 'linewatch-backend'
+      - 'deploy'
+      - 'google-deepmind-hackathon'  # Correct Service Name
       - '--image'
       - 'gcr.io/$PROJECT_ID/linewatch-backend'
       - '--region'
-      - 'us-central1'
+      - 'europe-west1'  # Correct Region
       - '--allow-unauthenticated'
 
 options:
