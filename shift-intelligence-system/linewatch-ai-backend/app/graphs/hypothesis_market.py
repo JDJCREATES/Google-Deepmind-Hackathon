@@ -36,6 +36,7 @@ from app.graphs.nodes import (
     evolve_policy_node,
 )
 from app.utils.logging import get_agent_logger
+from app.config import settings
 
 
 logger = get_agent_logger("HypothesisMarketGraph")
@@ -273,7 +274,4 @@ async def run_hypothesis_market(
         import traceback
         logger.error(traceback.format_exc())
         return {"error": str(e)}
-    finally:
-        if conn:
-            await conn.close()
 

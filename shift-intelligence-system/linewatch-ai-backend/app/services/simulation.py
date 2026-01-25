@@ -656,6 +656,18 @@ class SimulationService:
     # LIFECYCLE
     # =========================================================================
     
+
+    def _create_task(self, coro):
+        """
+        Helper to create a unified tracked task.
+        Ensures all spawned background tasks are tracked in self.pending_tasks
+        so they can be cleanly cancelled on stop().
+        """
+        task = asyncio.create_task(coro)
+        self.pending_tasks.add(task)
+        task.add_done_callback(self.pending_tasks.discard)
+        return task
+    
     async def start(self):
         """Start the simulation loop."""
         if self.is_running:
@@ -665,7 +677,8 @@ class SimulationService:
         # State is only cleared on full server restart or manual clean.
         
         self.is_running = True
-        self.sim_task = asyncio.create_task(self._run_loop())
+        self.is_running = True
+        self.sim_task = self._create_task(self._run_loop())
         logger.info("🎬 Simulation Service STARTED (Live Production Mode)")
         
         await manager.broadcast({
@@ -1671,7 +1684,8 @@ class SimulationService:
                         
                         # Simulate repair time then return (or triggered by agent?)
                         # For now, let's fix it after 5 seconds
-                        asyncio.create_task(self._finish_repair(self.maintenance_crew["assigned_machine_id"]))
+                        # For now, let's fix it after 5 seconds
+                        self._create_task(self._finish_repair(self.maintenance_crew["assigned_machine_id"]))
                 else:
                     self.maintenance_crew["x"] += (dx / dist) * speed * self.tick_rate
                     self.maintenance_crew["y"] += (dy / dist) * speed * self.tick_rate
@@ -2109,7 +2123,7 @@ class SimulationService:
         }
         
         # Trigger investigation automatically (Fix for missing monitoring loop)
-        asyncio.create_task(self._trigger_investigation(signal["data"]))
+        self._create_task(self._trigger_investigation(signal["data"]))
         
         return signal
     
@@ -2147,9 +2161,8 @@ class SimulationService:
         }
         
         
-        # MONITORING LOOP REPLACEMENT: Trigger investigation directly
         # The external monitoring loop was missing, so we invoke the agent here.
-        asyncio.create_task(self._trigger_investigation(signal["data"]))
+        self._create_task(self._trigger_investigation(signal["data"]))
         
         return signal
     
@@ -2388,7 +2401,9 @@ class SimulationService:
             # This was missing - agents were ignoring manual events
             if event["data"].get("severity") in ["HIGH", "CRITICAL"]:
                 logger.info(f"🤖 Triggering Agent Investigation for manual {event_type}")
-                asyncio.create_task(self._trigger_investigation(event["data"]))
+            if event["data"].get("severity") in ["HIGH", "CRITICAL"]:
+                logger.info(f"🤖 Triggering Agent Investigation for manual {event_type}")
+                self._create_task(self._trigger_investigation(event["data"]))
             
             return event
             
