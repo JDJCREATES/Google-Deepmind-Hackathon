@@ -631,13 +631,31 @@ async def gather_evidence_node(state: HypothesisMarketState) -> Dict[str, Any]:
         
         # Broadcast tool usage for frontend
         from app.services.websocket import manager
+        
+        # Format the result for cleaner logging
+        formatted_result = sim_result
+        if isinstance(sim_result, dict):
+            # Extract key fields for known tool types
+            if "reading" in sim_result:
+                formatted_result = f"Reading: {sim_result['reading']} (Threshold: {sim_result.get('threshold')}) - {sim_result.get('status')}"
+            elif "match_count" in sim_result:
+                formatted_result = f"Logs found: {sim_result['match_count']}"
+                if sim_result.get('match_count', 0) > 0 and 'logs' in sim_result:
+                     # Brief summary of first log
+                     first_log = sim_result['logs'][0] if sim_result['logs'] else {}
+                     formatted_result += f" (e.g. {first_log.get('type')})"
+            elif "health_percent" in sim_result:
+                formatted_result = f"Health: {sim_result['health_percent']}% - {sim_result.get('status')}"
+            elif "visual_anomaly_detected" in sim_result:
+                formatted_result = f"Anomaly: {sim_result['visual_anomaly_detected']} ({sim_result.get('description')})"
+        
         await manager.broadcast({
             "type": "tool_execution",
             "data": {
                 "agent": normalized_agent,
                 "tool": tool_name,
                 "rationale": rationale,
-                "result": sim_result,
+                "result": formatted_result,
                 "timestamp": datetime.now().isoformat()
             }
         })
@@ -1063,13 +1081,18 @@ async def execute_action_node(state: HypothesisMarketState) -> Dict[str, Any]:
         elif "safety" in action.lower(): agent_broadcaster = "compliance"
         elif "evacuate" in action.lower(): agent_broadcaster = "orchestrator"
         
+        # Format result string
+        formatted_outcome = result["outcome"]
+        if not result["success"]:
+            formatted_outcome = f"FAILED: {formatted_outcome}"
+            
         await manager.broadcast({
             "type": "tool_execution",
             "data": {
                 "agent": agent_broadcaster,
                 "tool": action,
                 "rationale": "Execution of selected hypothesis action",
-                "result": result,
+                "result": formatted_outcome,
                 "timestamp": datetime.now().isoformat()
             }
         })
