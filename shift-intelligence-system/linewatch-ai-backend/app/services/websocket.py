@@ -66,16 +66,30 @@ class ConnectionManager:
             
         # DEDUPLICATION: 5s window for thought bubbles (spams the graph otherwise)
         msg_type = message.get('type', '')
-        if msg_type == 'agent_thinking':
-            # Create unique signature based on agent and thought content
-            agent = message.get('data', {}).get('agent', '')
-            thought = message.get('data', {}).get('thought', '')
-            dedup_key = f"{agent}:{thought}"
+        if msg_type in ('agent_thinking', 'agent_action', 'tool_execution'):
+            # Create unique signature based on agent and content
+            data = message.get('data', {})
+            agent = data.get('agent', '')
+            
+            # Content depends on message type
+            if msg_type == 'agent_thinking':
+                content = data.get('thought', '')
+            elif msg_type == 'agent_action':
+                actions = data.get('actions', [])
+                content = str(actions)
+            elif msg_type == 'tool_execution':
+                tool = data.get('tool', '')
+                result = str(data.get('result', ''))
+                content = f"{tool}:{result}"
+            else:
+                content = str(data)
+                
+            dedup_key = f"{msg_type}:{agent}:{content}"
             
             now = datetime.now().timestamp()
             last_time = self.broadcast_cache.get(dedup_key, 0)
             
-            # 5 second window
+            # 5 second window for duplicates
             if now - last_time < 5.0:
                  return # Skip broadcast
             

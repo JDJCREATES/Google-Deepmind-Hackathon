@@ -533,6 +533,13 @@ async def gather_evidence_node(state: HypothesisMarketState) -> Dict[str, Any]:
         # Build set of existing signatures for this hypothesis to prevent loops
         existing_signatures = {e.signature for e in relevant_evidence}
         
+        # 0.5 SKIP IF ALREADY VERIFIED (Simple Loop Prevention)
+        # If we already have evidence for this hypothesis, don't just ask again blindly.
+        # This prevents the agent from spamming the same tool in subsequent iterations.
+        if len(relevant_evidence) > 0:
+             logger.info(f"⏩ Skipping re-verification for {hypothesis.hypothesis_id} (Evidence count: {len(relevant_evidence)})")
+             return None
+        
         # 1. Ask agent to propose verification (SILENTLY)
         # We broadcast a managed Orchestrator log instead
         verification_plan = await agent.propose_verification(
