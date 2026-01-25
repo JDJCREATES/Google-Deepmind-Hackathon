@@ -278,7 +278,8 @@ class SimulationService:
         # =====================================================================
         # STATE & PERSISTENCE
         # =====================================================================
-        from app.config import settings
+        # from app.config import settings
+
         import os
         
         # Ensure data directory exists
