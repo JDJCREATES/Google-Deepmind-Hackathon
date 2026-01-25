@@ -22,6 +22,8 @@ class ConnectionManager:
         self.active_connections: List[WebSocket] = []
         # Event log buffer - stores last N events for new clients
         self.event_log: deque = deque(maxlen=MAX_LOG_ENTRIES)
+        # Deduplication cache: hash -> timestamp
+        self.broadcast_cache: Dict[str, float] = {}
         
     async def connect(self, websocket: WebSocket):
         """Accept a new connection and send historical logs."""
@@ -61,9 +63,29 @@ class ConnectionManager:
         if not isinstance(message, dict):
             logger.error(f"Cannot broadcast non-dict message: {message}")
             return
-        
-        # Store loggable events (exclude high-frequency updates)
+            
+        # DEDUPLICATION: 5s window for thought bubbles (spams the graph otherwise)
         msg_type = message.get('type', '')
+        if msg_type == 'agent_thinking':
+            # Create unique signature based on agent and thought content
+            agent = message.get('data', {}).get('agent', '')
+            thought = message.get('data', {}).get('thought', '')
+            dedup_key = f"{agent}:{thought}"
+            
+            now = datetime.now().timestamp()
+            last_time = self.broadcast_cache.get(dedup_key, 0)
+            
+            # 5 second window
+            if now - last_time < 5.0:
+                 return # Skip broadcast
+            
+            self.broadcast_cache[dedup_key] = now
+            
+            # Simple cleanup to prevent unbounded growth
+            if len(self.broadcast_cache) > 1000:
+                self.broadcast_cache.clear()
+
+        # Store loggable events (exclude high-frequency updates)
         excluded_types = {
             'visibility_sync', 'operator_data_update', 'supervisor_update', 'maintenance_crew_update', 
             'shift_status', 'machine_production_update', 'machine_production_state', 'conveyor_box_update', 
