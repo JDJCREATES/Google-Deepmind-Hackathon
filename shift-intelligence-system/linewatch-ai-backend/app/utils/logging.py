@@ -14,7 +14,7 @@ def setup_logging(level: str = "INFO"):
     
     # Add custom handler with colors and agent context
     logger.add(
-        sys.stdout,
+        sys.stderr,
         format=(
             "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
             "<level>{level: <8}</level> | "

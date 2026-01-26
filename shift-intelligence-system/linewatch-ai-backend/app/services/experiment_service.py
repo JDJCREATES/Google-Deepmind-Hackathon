@@ -32,6 +32,7 @@ class ExperimentService:
              os.makedirs(self.data_dir, exist_ok=True)
              self.db_path = os.path.join(data_dir, "experiment.db")
              self.is_persistent = True
+             logger.info(f"✅ ExperimentService persistence enabled at: {self.db_path}")
         except OSError:
              logger.warning("⚠️ Filesystem is read-only. Switching ExperimentService to IN-MEMORY mode.")
              self.db_path = ":memory:"
