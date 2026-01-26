@@ -120,10 +120,17 @@ class StrategicMemory:
     to enable continuous improvement across application restarts.
     """
     
-    def __init__(self, db_path: str = "data/learning.db"):
-        self.db_path = db_path
+    def __init__(self, db_path: str = None):
+        if db_path is None:
+            # Import settings lazily to avoid circular imports
+            from app.config import settings
+            self.db_path = os.path.join(settings.data_dir, "learning.db")
+        else:
+            self.db_path = db_path
+            
         self._table_initialized = False
-        os.makedirs(os.path.dirname(db_path) or ".", exist_ok=True)
+        os.makedirs(os.path.dirname(self.db_path) or ".", exist_ok=True)
+        logger.info(f"🧠 StrategicMemory persistence enabled at: {self.db_path}")
     
     async def _ensure_tables(self, db: aiosqlite.Connection):
         """Ensure all required tables exist."""
@@ -171,6 +178,41 @@ class StrategicMemory:
         """)
         
         await db.commit()
+        
+        # Seed Baseline Policy if empty
+        cursor = await db.execute("SELECT count(*) FROM policy_evolution")
+        count = (await cursor.fetchone())[0]
+        
+        if count == 0:
+            logger.info("🌱 Seeding Baseline Policy v1.0...")
+            baseline_weights = {
+                 "production_impact": 0.4,
+                 "safety_risk": 0.3,
+                 "cost_efficiency": 0.2,
+                 "time_urgency": 0.1
+            }
+            await db.execute("""
+                INSERT INTO policy_evolution (
+                    version, description, trigger_event, changes,
+                    confidence_threshold_act, confidence_threshold_escalate,
+                    framework_weights, policy_insights, incidents_evaluated,
+                    accuracy_rate, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                "v1.0",
+                "Initial Baseline Policy",
+                "System Initialization",
+                json.dumps(["Established baseline confidence thresholds", "Initialized weighing framework"]),
+                0.75, # Act threshold
+                0.90, # Escalate threshold
+                json.dumps(baseline_weights),
+                json.dumps([]),
+                0,
+                0.0,
+                datetime.now().isoformat()
+            ))
+            await db.commit()
+
         self._table_initialized = True
     
     async def add_replay(self, replay: CounterfactualReplay) -> None:

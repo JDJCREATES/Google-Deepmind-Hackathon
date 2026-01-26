@@ -838,9 +838,30 @@ class SimulationService:
         # 10. PROCESS ECONOMY (wages, sales)
         self._process_finances(self.tick_rate)
         self._process_market_sales()
+        # 10. PROCESS ECONOMY (wages, sales)
+        self._process_finances(self.tick_rate)
+        self._process_market_sales()
         self._calculate_metrics(self.tick_rate)  # Calculate OEE and safety scores
         
-        # 10. BROADCAST ALL OPERATOR DATA (for UI - fatigue bars, stats, etc)
+        # 11. PERSIST ANALYTICS (Batched / Throttled)
+        # Log every ~30 sim seconds (assuming 0.5s tick rate -> 60 ticks)
+        # Actually, let's log every 10 ticks for smoother UI updates initially
+        if self.tick_count % 10 == 0:
+            shared_context = experiment_service  # just a placeholder, real call below
+            # Build state snapshot
+            snapshot = {
+                "kpi": asdict(self.kpi),
+                "financials": asdict(self.financials),
+                "active_alerts": [], # Simplified for now
+                "safety_violations": [],
+                "production_rate": self.production_rate_per_min,
+                "inventory": self.warehouse_inventory,
+                "simulation_hours": self.simulation_hours
+            }
+            # Fire and forget (don't await to block tick)
+            asyncio.create_task(experiment_service.log_tick(snapshot))
+
+        # 12. BROADCAST DATA
         # This is SEPARATE from fog-of-war visibility
         all_operators_data = {}
         for op in self.operators:

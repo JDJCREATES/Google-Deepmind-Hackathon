@@ -72,64 +72,8 @@ class ExperimentService:
         """)
         await db.commit()
         
-        # DEMO MODE: Seed fake history if table is empty
-        # This makes the "Analytics" tab look populated even on a fresh restart
-        cursor = await db.execute("SELECT count(*) FROM experiment_logs")
-        count = (await cursor.fetchone())[0]
+        await db.commit()
         
-        if count == 0:
-            logger.info("🌱 Seeding DEMO analytics data (24h history)...")
-            import random
-            from datetime import timedelta
-            
-            seed_data = []
-            base_time = datetime.now() - timedelta(hours=24)
-            current_balance = 5000.0
-            current_oee = 0.65  # Start low to show "improvement"
-            
-            for i in range(24):
-                time_point = base_time + timedelta(hours=i)
-                
-                # Simulate "learning curve" - OEE improves over time
-                current_oee = min(0.92, current_oee + random.uniform(0.005, 0.015))
-                
-                # Financials
-                revenue = random.uniform(800, 1500)
-                expenses = random.uniform(600, 900)
-                current_balance += (revenue - expenses)
-                
-                # Agent Learning Stats
-                tokens_in = 5000 * (i + 1)
-                tokens_out = 2000 * (i + 1)
-                
-                await db.execute("""
-                    INSERT INTO experiment_logs (
-                        timestamp, sim_time_hours, oee, safety_score,
-                        revenue_cum, expenses_cum, profit_cum,
-                        active_alerts, safety_incidents,
-                        agent_tokens_in, agent_tokens_out, agent_cost_est,
-                        production_rate_avg, inventory_level
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    time_point.isoformat(),
-                    float(i),     # Sim hours
-                    current_oee,  # Increasing OEE!
-                    random.uniform(98.0, 100.0), # Good safety
-                    revenue * (i+1), # Cumulative rev approx
-                    expenses * (i+1),
-                    current_balance,
-                    random.randint(0, 2), # Alerts
-                    0,
-                    tokens_in,
-                    tokens_out,
-                    (tokens_in + tokens_out) * 0.00001,
-                    random.uniform(15, 25),
-                    random.randint(50, 200)
-                ))
-            
-            await db.commit()
-            logger.info("✅ Seeded 24 hours of demo history")
-
         self._table_initialized = True
 
     async def log_tick(self, state: Dict[str, Any]):
