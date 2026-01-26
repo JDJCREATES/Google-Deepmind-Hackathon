@@ -49,6 +49,8 @@ class ExperimentService:
         if self._table_initialized:
             return
 
+        logger.info(f"💾 ExperimentService accessing DB at: {self.db_path}")
+
         await db.execute("""
             CREATE TABLE IF NOT EXISTS experiment_logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

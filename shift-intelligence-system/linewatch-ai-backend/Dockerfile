@@ -1,6 +1,9 @@
 # Use official Python runtime as a parent image
 FROM python:3.11-slim
 
+# Force unbuffered stdout/stderr (CRITICAL for Cloud Run logging)
+ENV PYTHONUNBUFFERED=1
+
 # Set working directory
 WORKDIR /app
 
